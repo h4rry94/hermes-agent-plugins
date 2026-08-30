@@ -4,7 +4,7 @@ description: "NVIDIA GPU stats for the Hermes desktop status bar and the in-sess
 author: r.gonzalezgary@gmail.com
 kind: standalone
 provides_tools: []
-manifest_version: 2
+manifest_version: 1
 api_version: 1
 config_schema:
   poll_seconds:
