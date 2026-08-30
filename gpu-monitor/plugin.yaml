@@ -1,0 +1,17 @@
+name: gpu-monitor
+version: 1.0.0
+description: "NVIDIA GPU stats for the Hermes desktop status bar and the in-session /gpu command."
+author: r.gonzalezgary@gmail.com
+kind: standalone
+provides_tools: []
+manifest_version: 2
+api_version: 1
+config_schema:
+  poll_seconds:
+    type: int
+    default: 2
+    description: "How often the desktop requests GPU statistics (1-30 seconds)."
+  cli_command_enabled:
+    type: bool
+    default: true
+    description: "Register the /gpu command in CLI and gateway sessions (restart required after changing)."
