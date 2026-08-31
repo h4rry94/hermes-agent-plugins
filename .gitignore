@@ -1,3 +1,10 @@
 __pycache__/
 *.pyc
 node_modules/
+
+# Claude config is machine-local for this repo (public) — see CLAUDE.md
+/CLAUDE.md
+/.claude/
+
+# Migration notes are working docs, kept local
+/PLUGIN_MIGRATION_GUIDE.md
