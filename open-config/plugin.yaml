@@ -1,0 +1,13 @@
+name: open-config
+version: 0.1.0
+description: "Status bar, palette and keybind shortcuts that open config.yaml and .env in your OS default editor."
+author: r.gonzalezgary@gmail.com
+kind: standalone
+provides_tools: []
+manifest_version: 1
+api_version: 1
+config_schema:
+  cli_command_enabled:
+    type: bool
+    default: true
+    description: "Register the /config command in CLI and gateway sessions (restart required after changing)."
