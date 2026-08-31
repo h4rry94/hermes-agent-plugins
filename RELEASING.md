@@ -305,7 +305,7 @@ else is local, above.
 
 | Job | Checks |
 | --- | --- |
-| `validate` | `plugin.yaml` name matches its folder, version is SemVer, README and CHANGELOG exist; `compileall` per plugin |
+| `validate` | `plugin.yaml` name matches its folder, version is SemVer, README and CHANGELOG exist; unit tests; `compileall` per plugin |
 | `desktop` | Every `desktop/plugin.js` still matches a fresh `pnpm build` of its `plugin.tsx`; sources and `build.ts` type-check |
 | `subject` | The PR title is a conventional commit subject, with types read from `cliff.toml` |
 | `changelog-preview` | Comments on the PR with the changelog lines it would produce, warning if any land under Uncategorized |
