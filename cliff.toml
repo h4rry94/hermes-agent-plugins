@@ -48,6 +48,17 @@ commit_preprocessors = [
 
 # Numeric prefixes fix group ordering; `striptags` removes them for display.
 commit_parsers = [
+  # Scopes that name something other than a plugin. This config selects
+  # commits by PATH (--include-path '<plugin>/**'), and repo-wide work
+  # routinely touches a plugin folder - porting the desktop build rewrote a
+  # generated banner inside gpu-monitor/ - so the path filter alone would file
+  # repo tooling as a plugin feature. Skipped here, kept in cliff-repo.toml,
+  # where repo-scoped work belongs.
+  #
+  # scripts/validate.py reads this alternation to check PR titles, so the set
+  # lives here once. git-cliff cannot match on a parsed scope (a parser's
+  # `scope` key SETS one), hence the subject-prefix regex.
+  { message = '^[a-z]+\((repo)\)', skip = true },
   { message = "^feat", group = "<!-- 0 -->Added" },
   { message = "^(refactor|perf)", group = "<!-- 1 -->Changed" },
   { message = "^deprecate", group = "<!-- 2 -->Deprecated" },
