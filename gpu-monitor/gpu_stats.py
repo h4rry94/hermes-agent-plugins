@@ -45,6 +45,13 @@ def read_gpus() -> dict:
         )
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "nvidia-smi timed out"}
+    except OSError as exc:
+        # which() found it, but exec still failed - a broken symlink, a file
+        # without the execute bit, or a driver upgrade swapping it out between
+        # the lookup and the call. Report it like any other sampling failure
+        # instead of letting it escape into /gpu and the /stats endpoint.
+        detail = exc.strerror or str(exc)
+        return {"ok": False, "error": f"could not run nvidia-smi: {detail}"}
     if process.returncode != 0:
         error = (process.stderr or process.stdout).strip() or "nvidia-smi failed"
         return {"ok": False, "error": error}
