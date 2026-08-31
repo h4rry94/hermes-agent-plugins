@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Read-only by default; the changelog preview raises its own scope.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLIFF_VERSION: "2.13.1"
+
+jobs:
+  validate:
+    name: Plugins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Plugin manifests
+        run: python scripts/validate.py plugins
+
+      - name: Byte-compile plugin Python
+        run: |
+          for manifest in */plugin.yaml; do
+            plugin="$(dirname "$manifest")"
+            echo "::group::compileall $plugin"
+            python -m compileall -q "$plugin"
+            echo "::endgroup::"
+          done
+
+  subject:
+    name: PR title
+    # The squash subject defaults to the PR title, and under generated
+    # changelogs that string becomes the line an installing user reads.
+    # It cannot be corrected once it is on main: force-push and non-linear
+    # history are both blocked by the branch ruleset.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Conventional commit subject
+        # Via env, never inlined into the shell: a PR title is attacker-controlled.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: python scripts/validate.py subject "$PR_TITLE"
+
+  changelog-preview:
+    name: Changelog preview
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags: git-cliff diffs against the last plugin tag.
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        run: |
+          base="https://github.com/orhun/git-cliff/releases/download/v${CLIFF_VERSION}"
+          asset="git-cliff-${CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          curl -sSLo cliff.tar.gz "${base}/${asset}"
+          curl -sSLo cliff.sha512 "${base}/${asset}.sha512"
+          echo "$(cut -d' ' -f1 cliff.sha512)  cliff.tar.gz" | sha512sum -c -
+          tar -xzf cliff.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/git-cliff-*/git-cliff /usr/local/bin/git-cliff
+          rm -f cliff.tar.gz cliff.sha512
+          git-cliff --version
+
+      - name: Render preview
+        run: |
+          {
+            echo "<!-- changelog-preview -->"
+            echo "### Changelog preview"
+            echo
+            echo "What this PR would add on release. These lines come from commit"
+            echo "subjects, so they are what an installing user reads."
+            echo
+          } > preview.md
+
+          found=0
+          for manifest in */plugin.yaml; do
+            plugin="$(dirname "$manifest")"
+            section="$(git-cliff --config cliff.toml \
+              --include-path "${plugin}/**" \
+              --tag-pattern "${plugin}-v.*" \
+              --unreleased 2>/dev/null || true)"
+            if [ -n "$section" ]; then
+              found=1
+              { echo "#### ${plugin}"; echo; echo '```markdown'; echo "$section"; echo '```'; echo; } >> preview.md
+            fi
+          done
+
+          if [ "$found" -eq 0 ]; then
+            echo "_No unreleased commits touch a plugin folder._" >> preview.md
+          fi
+
+          if grep -q "Uncategorized" preview.md; then
+            {
+              echo "> [!WARNING]"
+              echo "> Commits landed under **Uncategorized** - they are not conventional"
+              echo "> commits. \`release.py\` will refuse to release while they exist, and"
+              echo "> they cannot be reworded once merged to main."
+            } >> preview.md
+          fi
+
+          cat preview.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post preview
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR" --body-file preview.md --edit-last \
+            || gh pr comment "$PR" --body-file preview.md

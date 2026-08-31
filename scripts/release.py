@@ -207,7 +207,14 @@ def cmd_prep(args: argparse.Namespace) -> int:
     commits = unreleased_commits(name)
     if not commits:
         raise Fail(f"no commits touching {name}/ since {tag_of(name, current)}")
-    guard_conventional(name, commits)
+    if args.allow_unconventional:
+        stray = [c for c in commits if "Uncategorized" in (c.get("group") or "")]
+        if stray:
+            print(f"warning: releasing with {len(stray)} unconventional commit(s); "
+                  "they appear under 'Uncategorized'. Edit the section by hand "
+                  "before committing the release.\n", file=sys.stderr)
+    else:
+        guard_conventional(name, commits)
 
     new = args.set or bump(current, args.part)
     tag = tag_of(name, new)
@@ -305,6 +312,11 @@ def main() -> int:
     level.add_argument("--minor", dest="part", action="store_const", const="minor")
     level.add_argument("--patch", dest="part", action="store_const", const="patch")
     prep.add_argument("--set", help="explicit X.Y.Z, overrides --major/--minor/--patch")
+    prep.add_argument(
+        "--allow-unconventional", action="store_true",
+        help="release despite unconventional commits (they cannot be reworded "
+             "once on main: force-push and non-linear history are blocked)",
+    )
     prep.set_defaults(func=cmd_prep, part="patch")
 
     notes = sub.add_parser("notes", help="render the GitHub Release body")
