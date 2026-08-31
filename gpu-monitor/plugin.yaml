@@ -1,5 +1,5 @@
 name: gpu-monitor
-version: 1.0.0
+version: 0.1.0
 description: "NVIDIA GPU stats for the Hermes desktop status bar and the in-session /gpu command."
 author: r.gonzalezgary@gmail.com
 kind: standalone
