@@ -5,7 +5,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this plugin
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
 [RELEASING.md](../RELEASING.md) for the release process.
 
-Sections below `## [Unreleased]` are generated from commit history by
-`scripts/release.py prep` — never hand-edited.
+## [0.1.0] - 2026-08-31
 
-## [Unreleased]
+### Added
+
+- Open config.yaml and .env from the status bar, palette or /config
+
