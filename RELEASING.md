@@ -136,12 +136,23 @@ desktop contribution in the app. Python-half changes need a gateway restart.
    - requirements (host version, external programs, platforms),
    - the plain install command,
    - the **full 40-character SHA** and the SHA-pinned install command.
-8. Verify the pinned command actually installs from a clean state:
+8. Verify the pinned command actually installs from a clean state. Do it in a
+   throwaway Hermes home so a live install is never disturbed:
 
    ```bash
-   hermes plugins remove <plugin>
-   hermes plugins install h4rry94/hermes-agent-plugins/<plugin> --ref <sha> --enable
+   HERMES_HOME=/tmp/release-check hermes plugins install      h4rry94/hermes-agent-plugins/<plugin> --ref <sha> --enable
    ```
+
+   Then confirm `plugins/<plugin>/plugin.yaml` reports the released version and
+   `plugins/.install-metadata.json` records the SHA you pinned, and delete the
+   directory.
+
+   Do **not** verify by removing the real install. On Windows a running gateway
+   or desktop app holds the plugin folder open, and both `hermes plugins remove`
+   and `hermes plugins install --force` fail with `[WinError 5] Access is
+   denied` — the removal path renames the directory before it deletes it.
+   Reinstalling over a live install needs the gateway stopped first, which is
+   not something a release check should require.
 
 9. If the plugin is listed in the Hermes community index, update its entry to
    the new SHA. Index metadata points at `subdir` + an immutable SHA.
