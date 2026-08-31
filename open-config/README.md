@@ -53,6 +53,24 @@ Settings may list an agent entry *and* a desktop entry for Open Config. That is
 one installed package with two runtime components, not a duplicate install — a
 plugin manifest cannot coalesce the entries or flip both switches at once.
 
+### Migrating from the standalone desktop plugin
+
+Earlier versions of Open Config were installed by copying a folder to
+`$HERMES_HOME/desktop-plugins/open-config/`. **Delete that folder after
+installing this package.**
+
+The desktop app scans two roots — `desktop-plugins/<name>/plugin.js` and the
+unified half at `plugins/<name>/desktop/plugin.js` — and keys them by file path,
+so a leftover copy loads as a *second* entry advertising the same
+`open-config` id. The two roots also differ in posture: the legacy one is
+trusted on by default, while the unified half stays off until you enable it. The
+visible symptom is duplicated status-bar buttons, or a Settings toggle that
+appears to do nothing because the legacy copy is still registering.
+
+```bash
+rm -rf "$HERMES_HOME/desktop-plugins/open-config"
+```
+
 ### Verify
 
 ```bash
