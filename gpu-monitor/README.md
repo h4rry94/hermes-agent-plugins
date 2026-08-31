@@ -66,6 +66,7 @@ plugins:
     gpu-monitor:
       settings:
         poll_seconds: 2
+        vram_warn_percent: 92
         cli_command_enabled: true
 ```
 
@@ -78,6 +79,7 @@ hermes config set plugins.entries.gpu-monitor.settings.poll_seconds 5
 | Setting | Type | Default | Range | Takes effect |
 | --- | --- | --- | --- | --- |
 | `poll_seconds` | int | `2` | 1–30 (values outside the range are clamped; non-integers fall back to the default) | Hot-reload — no restart |
+| `vram_warn_percent` | int | `92` | 50–100 (clamped the same way) | Hot-reload — no restart |
 | `cli_command_enabled` | bool | `true` | — | Restart the CLI session or gateway |
 
 - `poll_seconds` is how often the desktop chip requests a sample. The backend
@@ -85,6 +87,10 @@ hermes config set plugins.entries.gpu-monitor.settings.poll_seconds 5
   sample, so the chip picks up a change on its next poll. Polling also pauses
   while the desktop window is in the background, and a 1-second server-side
   cache keeps concurrent pollers from stacking `nvidia-smi` processes.
+- `vram_warn_percent` is the VRAM use at which the chip switches to the accent
+  color, so a nearly-full card is visible at a glance. It travels with the
+  sample like `poll_seconds`, so a change applies on the chip's next poll. Raise
+  it if a workload legitimately sits near capacity; lower it for earlier warning.
 - `cli_command_enabled` is read once, when the Python component registers. Set
   it to `false` to keep the status-bar chip but drop `/gpu` from sessions.
 
@@ -145,8 +151,9 @@ this degrades to a placeholder instead of taking the status bar down.
 
 **Changes to the Python code did nothing.** The gateway loads the Python half at
 startup. Restart the gateway after editing `__init__.py`, `gpu_stats.py`, or
-`dashboard/plugin_api.py`, and after toggling `cli_command_enabled`. Only
-`poll_seconds` is picked up live. (Desktop `plugin.js` changes hot-reload in the
+`gpu-monitor/settings.py` or `dashboard/plugin_api.py`, and after toggling
+`cli_command_enabled`. Only `poll_seconds` and `vram_warn_percent` are picked up
+live. (Desktop `plugin.js` changes hot-reload in the
 app.)
 
 **`/gpu` is missing but the chip works.** `cli_command_enabled` is `false`, or

@@ -11,6 +11,10 @@ config_schema:
     type: int
     default: 2
     description: "How often the desktop requests GPU statistics (1-30 seconds)."
+  vram_warn_percent:
+    type: int
+    default: 92
+    description: "VRAM use (%) at which the status-bar chip switches to the accent color (50-100)."
   cli_command_enabled:
     type: bool
     default: true

@@ -10,6 +10,7 @@ import {
 import { Component, useEffect, useState } from "react";
 const ID = "gpu-monitor";
 const DEFAULT_POLL_SECONDS = 2;
+const DEFAULT_VRAM_WARN_PERCENT = 92;
 class ChipBoundary extends Component {
   state = { error: null };
   static getDerivedStateFromError(error) {
@@ -76,7 +77,8 @@ function GpuChip() {
     }
   }, [data?.pollSeconds, pollSeconds]);
   const gpus = data?.ok ? data.gpus : null;
-  const hot = gpus?.some((g) => g.memUsed / g.memTotal > 0.92);
+  const warnPercent = data?.vramWarnPercent ?? DEFAULT_VRAM_WARN_PERCENT;
+  const hot = gpus?.some((g) => g.memTotal > 0 && g.memUsed / g.memTotal * 100 > warnPercent);
   return /* @__PURE__ */ jsx(Tip, { label: tipText(data, error), children: /* @__PURE__ */ jsxs(
     "span",
     {
