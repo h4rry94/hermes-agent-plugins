@@ -103,7 +103,9 @@ jobs:
               --include-path "${plugin}/**" \
               --tag-pattern "${plugin}-v.*" \
               --unreleased 2>/dev/null || true)"
-            if [ -n "$section" ]; then
+            # git-cliff still renders the "## [Unreleased]" heading when nothing
+            # matched, so emptiness is decided by the presence of a bullet.
+            if printf '%s\n' "$section" | grep -q '^- '; then
               found=1
               { echo "#### ${plugin}"; echo; echo '```markdown'; echo "$section"; echo '```'; echo; } >> preview.md
             fi
