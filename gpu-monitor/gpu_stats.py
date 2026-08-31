@@ -8,23 +8,35 @@ _QUERY = "utilization.gpu,memory.used,memory.total,name"
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
+def _parse_int(value: str) -> int | None:
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 def _parse_output(output: str) -> dict:
     gpus = []
     for line in output.strip().splitlines():
         parts = [part.strip() for part in line.split(",")]
         if len(parts) < 4:
             continue
-        try:
-            gpus.append(
-                {
-                    "util": int(parts[0]),
-                    "memUsed": int(parts[1]),
-                    "memTotal": int(parts[2]),
-                    "name": ", ".join(parts[3:]),
-                }
-            )
-        except ValueError:
+        mem_used = _parse_int(parts[1])
+        mem_total = _parse_int(parts[2])
+        # VRAM is what makes a row worth keeping. Utilization is allowed to be
+        # missing: nvidia-smi reports [N/A] for utilization.gpu on MIG-enabled
+        # and some virtualized cards, and dropping the whole row for it hid a
+        # GPU whose memory figures were right there and perfectly good.
+        if mem_used is None or mem_total is None:
             continue
+        gpus.append(
+            {
+                "util": _parse_int(parts[0]),
+                "memUsed": mem_used,
+                "memTotal": mem_total,
+                "name": ", ".join(parts[3:]),
+            }
+        )
     if not gpus:
         return {"ok": False, "error": f"unparseable nvidia-smi output: {output.strip()!r}"}
     return {"ok": True, "gpus": gpus}
@@ -67,8 +79,9 @@ def format_gpu_status(sample: dict) -> str:
     for index, gpu in enumerate(sample.get("gpus", [])):
         used_gib = gpu["memUsed"] / 1024
         total_gib = gpu["memTotal"] / 1024
+        util = gpu["util"]
         rows.append(
-            f"GPU {index} · {gpu['util']}% · "
+            f"GPU {index} · {f'{util}%' if util is not None else 'util n/a'} · "
             f"VRAM {used_gib:.1f}/{total_gib:.1f} GiB · {gpu['name']}"
         )
     return "\n".join(rows) or "GPU Monitor: no GPUs reported by nvidia-smi"

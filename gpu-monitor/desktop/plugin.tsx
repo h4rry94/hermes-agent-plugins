@@ -66,7 +66,7 @@ class ChipBoundary extends Component<{ children: ReactNode }, { error: Error | n
 }
 
 interface Gpu {
-  util: number
+  util: number | null // null when nvidia-smi reports [N/A] (MIG, some vGPU)
   memUsed: number // MiB
   memTotal: number // MiB
   name: string
@@ -80,8 +80,12 @@ function gib(mib: number): string {
   return (mib / 1024).toFixed(1)
 }
 
+function utilLabel(util: number | null): string {
+  return util === null ? '—' : `${util}%`
+}
+
 function gpuLabel(gpu: Gpu): string {
-  return `${gpu.util}% · ${gib(gpu.memUsed)}/${gib(gpu.memTotal)}G`
+  return `${utilLabel(gpu.util)} · ${gib(gpu.memUsed)}/${gib(gpu.memTotal)}G`
 }
 
 function tipText(data: GpuStats | undefined, error: unknown): string {
@@ -100,7 +104,11 @@ function tipText(data: GpuStats | undefined, error: unknown): string {
   }
 
   const stats = data.gpus
-    .map(g => `${g.name}: ${g.util}% util, ${g.memUsed}/${g.memTotal} MiB VRAM`)
+    .map(
+      g =>
+        `${g.name}: ${g.util === null ? 'utilization unavailable' : `${g.util}% util`}, ` +
+        `${g.memUsed}/${g.memTotal} MiB VRAM`
+    )
     .join(' — ')
   return `${stats} — polling every ${data.pollSeconds}s from config.yaml`
 }

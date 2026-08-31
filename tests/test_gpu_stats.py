@@ -91,6 +91,26 @@ class ParseOutputTests(unittest.TestCase):
         self.assertEqual(len(sample["gpus"]), 1)
         self.assertEqual(sample["gpus"][0]["name"], "Good GPU")
 
+    def test_na_utilization_keeps_the_gpu_with_its_vram(self):
+        # nvidia-smi reports [N/A] for utilization.gpu on MIG-enabled and some
+        # virtualized cards. The VRAM figures beside it are real, so the GPU
+        # must survive rather than vanish from the chip and /gpu.
+        sample = gpu_stats._parse_output("[N/A], 1024, 8192, NVIDIA A100-SXM4-40GB")
+        self.assertTrue(sample["ok"])
+        self.assertEqual(len(sample["gpus"]), 1)
+        gpu = sample["gpus"][0]
+        self.assertIsNone(gpu["util"])
+        self.assertEqual(gpu["memUsed"], 1024)
+        self.assertEqual(gpu["memTotal"], 8192)
+        self.assertEqual(gpu["name"], "NVIDIA A100-SXM4-40GB")
+
+    def test_na_memory_still_skips_the_row(self):
+        # VRAM is what makes a row worth keeping; without it there is nothing
+        # to show.
+        sample = gpu_stats._parse_output("42, [N/A], [N/A], Broken GPU\n7, 100, 200, Good GPU")
+        self.assertEqual(len(sample["gpus"]), 1)
+        self.assertEqual(sample["gpus"][0]["name"], "Good GPU")
+
     def test_all_rows_unparseable_is_an_error(self):
         sample = gpu_stats._parse_output("[N/A], [N/A], [N/A], Broken GPU")
         self.assertFalse(sample["ok"])
@@ -211,6 +231,16 @@ class FormatGpuStatusTests(unittest.TestCase):
             gpu_stats.format_gpu_status(sample),
             "GPU 0 · 42% · VRAM 8.0/24.0 GiB · RTX 4090",
         )
+
+    def test_na_utilization_renders_as_unavailable(self):
+        text = gpu_stats.format_gpu_status(
+            {"ok": True, "gpus": [
+                {"util": None, "memUsed": 1024, "memTotal": 8192, "name": "A100"}
+            ]}
+        )
+        self.assertIn("util n/a", text)
+        self.assertIn("VRAM 1.0/8.0 GiB", text)
+        self.assertNotIn("None", text)
 
     def test_multiple_gpus_are_indexed_and_newline_separated(self):
         sample = {
