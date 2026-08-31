@@ -39,8 +39,11 @@ let pluginCtx = null;
 function gib(mib) {
   return (mib / 1024).toFixed(1);
 }
+function utilLabel(util) {
+  return util === null ? "\u2014" : `${util}%`;
+}
 function gpuLabel(gpu) {
-  return `${gpu.util}% \xB7 ${gib(gpu.memUsed)}/${gib(gpu.memTotal)}G`;
+  return `${utilLabel(gpu.util)} \xB7 ${gib(gpu.memUsed)}/${gib(gpu.memTotal)}G`;
 }
 function tipText(data, error) {
   if (error) {
@@ -53,7 +56,9 @@ function tipText(data, error) {
   if (!data.ok) {
     return `GPU monitor \u2014 ${data.error} \u2014 polling every ${data.pollSeconds}s`;
   }
-  const stats = data.gpus.map((g) => `${g.name}: ${g.util}% util, ${g.memUsed}/${g.memTotal} MiB VRAM`).join(" \u2014 ");
+  const stats = data.gpus.map(
+    (g) => `${g.name}: ${g.util === null ? "utilization unavailable" : `${g.util}% util`}, ${g.memUsed}/${g.memTotal} MiB VRAM`
+  ).join(" \u2014 ");
   return `${stats} \u2014 polling every ${data.pollSeconds}s from config.yaml`;
 }
 function GpuChip() {
