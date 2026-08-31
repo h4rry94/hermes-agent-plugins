@@ -1,0 +1,10 @@
+# Not a workspace - this file exists only to carry pnpm settings, which pnpm
+# reads from here rather than from package.json.
+#
+# esbuild's postinstall verifies that the platform binary matches the package
+# version. pnpm blocks dependency build scripts by default, and a silently
+# skipped check surfaces later as a confusing build failure, so esbuild is
+# allowed explicitly. It is the only dependency granted this, and the only one
+# that should be: nothing else here has any business running code on install.
+allowBuilds:
+  esbuild: true

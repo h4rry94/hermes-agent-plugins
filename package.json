@@ -1,0 +1,17 @@
+{
+  "name": "hermes-agent-plugins",
+  "private": true,
+  "type": "module",
+  "description": "Build tooling for the desktop halves of the plugins in this repo. Not published, not installed by Hermes - `hermes plugins install` only ever reads a single <plugin>/ folder.",
+  "scripts": {
+    "build": "node build.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.18",
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3"
+  },
+  "packageManager": "pnpm@11.23.0"
+}

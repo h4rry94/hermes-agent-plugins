@@ -1,4 +1,4 @@
-// GENERATED from plugin.tsx — edit the TypeScript source, then rebuild this file.
+// GENERATED from plugin.tsx by `pnpm build` - edit the .tsx, never this file.
 import { jsx, jsxs } from "react/jsx-runtime";
 import {
   cn,

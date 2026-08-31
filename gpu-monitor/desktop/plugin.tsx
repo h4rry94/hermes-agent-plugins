@@ -8,9 +8,10 @@
  * the profile-scoped poll_seconds value from config.yaml with every sample;
  * polling pauses automatically while the window is in the background.
  *
- * TypeScript source of truth; `npm run build` compiles it to the plugin.js
+ * TypeScript source of truth; `pnpm build` compiles it to the plugin.js
  * the runtime loader executes (plain ESM, jsx() calls, imports limited to
- * @hermes/plugin-sdk and react/jsx-runtime).
+ * @hermes/plugin-sdk, react and react/jsx-runtime — the build refuses to
+ * emit anything else).
  */
 
 import {

@@ -39,6 +39,41 @@ jobs:
             echo "::endgroup::"
           done
 
+  desktop:
+    name: Desktop bundles
+    # desktop/plugin.js is an esbuild artifact of desktop/plugin.tsx that has
+    # to be committed - Hermes installs a plugin folder verbatim and never
+    # runs a build. Rebuilding here and diffing is what keeps the file anyone
+    # installs identical to the source anyone reviews.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads the pinned version straight from package.json#packageManager,
+      # so CI and a laptop cannot drift onto different pnpm releases.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install pinned build toolchain
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check plugin sources and the build script
+        run: pnpm check
+
+      - name: Rebuild committed bundles
+        run: pnpm build
+
+      - name: Bundles match their sources
+        run: |
+          if ! git diff --exit-code -- '*/desktop/plugin.js'; then
+            echo "::error::A committed desktop/plugin.js does not match a rebuild of its plugin.tsx. Run 'pnpm build' and commit the result."
+            exit 1
+          fi
+
   subject:
     name: PR title
     # The squash subject defaults to the PR title, and under generated

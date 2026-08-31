@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@hermes/plugin-sdk": [
+        "./types/hermes-plugin-sdk.d.ts"
+      ]
+    },
+    "erasableSyntaxOnly": true
+  },
+  "include": [
+    "*/desktop/*.tsx",
+    "types/*.d.ts",
+    "build.ts"
+  ]
+}

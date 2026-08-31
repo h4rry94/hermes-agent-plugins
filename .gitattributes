@@ -1,0 +1,9 @@
+# Generated files that have to round-trip byte-identically between a laptop
+# and a Linux runner. The desktop bundles are compared against a fresh
+# `pnpm build` (CI runs `git diff --exit-code`) and esbuild always writes LF,
+# so a core.autocrlf checkout would otherwise hand the build a file it is
+# bound to "change". The lockfile is pnpm's own output, checked by
+# `pnpm install --frozen-lockfile`.
+*/desktop/plugin.tsx text eol=lf
+*/desktop/plugin.js  text eol=lf
+pnpm-lock.yaml       text eol=lf
