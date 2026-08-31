@@ -23,6 +23,7 @@ CLIFF_PLUGIN = ROOT / "cliff.toml"
 CLIFF_REPO = ROOT / "cliff-repo.toml"
 ROOT_CHANGELOG = ROOT / "CHANGELOG.md"
 INSTALL_SLUG = "h4rry94/hermes-agent-plugins"
+FIRST_RELEASE = "0.1.0"  # git-cliff's own default when a plugin has no prior tag
 
 VERSION_RE = re.compile(r"^(version:\s*)(\S+)\s*$", re.M)
 
@@ -73,6 +74,11 @@ def tag_exists(tag: str) -> bool:
     return bool(run("git", "tag", "--list", tag))
 
 
+def released_tags(name: str) -> list[str]:
+    """Tags already published for this plugin, oldest first."""
+    return run("git", "tag", "--list", tag_of(name, "*")).splitlines()
+
+
 # ------------------------------------------------------------------- git-cliff
 
 def cliff(name: str, *extra: str) -> str:
@@ -109,6 +115,17 @@ def guard_conventional(name: str, commits: list[dict]) -> None:
 
 
 def suggested_bump(name: str) -> str | None:
+    """git-cliff's suggested next version, or None if it cannot offer one.
+
+    With no prior '<name>-v*' tag, git-cliff derives 0.1.0 and then refuses to
+    print it: a bare version cannot match the --tag-pattern every cliff() call
+    passes, so it exits non-zero and the suggestion is lost. That case is a
+    first release, and 0.1.0 is the answer it was reaching for. Retrying
+    without --tag-pattern would be wrong - tags are global, so one plugin would
+    bump from another plugin's tag.
+    """
+    if not released_tags(name):
+        return FIRST_RELEASE
     try:
         out = cliff(name, "--unreleased", "--bumped-version")
     except Fail:
