@@ -121,6 +121,29 @@ class ReadGpusTests(unittest.TestCase):
             sample = gpu_stats.read_gpus()
         self.assertEqual(sample, {"ok": False, "error": "nvidia-smi timed out"})
 
+    def test_permission_error_is_reported_not_raised(self):
+        # which() can find an nvidia-smi that still cannot be executed. The
+        # error has to come back as a sample: it escapes into /gpu and the
+        # /stats endpoint otherwise.
+        with mock.patch("shutil.which", return_value="/usr/bin/nvidia-smi"), mock.patch(
+            "subprocess.run", side_effect=PermissionError(13, "Permission denied")
+        ):
+            sample = gpu_stats.read_gpus()
+        self.assertEqual(
+            sample,
+            {"ok": False, "error": "could not run nvidia-smi: Permission denied"},
+        )
+
+    def test_os_error_without_strerror_still_reports(self):
+        with mock.patch("shutil.which", return_value="/usr/bin/nvidia-smi"), mock.patch(
+            "subprocess.run", side_effect=OSError("exec format error")
+        ):
+            sample = gpu_stats.read_gpus()
+        self.assertEqual(
+            sample,
+            {"ok": False, "error": "could not run nvidia-smi: exec format error"},
+        )
+
     def test_non_zero_exit_prefers_stderr(self):
         with mock.patch("shutil.which", return_value="/usr/bin/nvidia-smi"), mock.patch(
             "subprocess.run",
