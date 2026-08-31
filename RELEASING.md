@@ -87,6 +87,39 @@ regenerating it produces markedly worse prose than a human wrote. `release.py`
 splices each new section *above* the newest existing heading and never rewrites
 what is already there.
 
+## The desktop half is generated
+
+A plugin's `desktop/plugin.js` is esbuild output from `desktop/plugin.tsx`.
+**Never hand-edit it**, for the same reason as a `CHANGELOG.md`: the next
+rebuild silently discards the edit.
+
+It is committed anyway, because `hermes plugins install` copies a plugin folder
+verbatim and never runs a build - the runtime needs the `.js` to be there
+already. So the `.tsx` is the source anyone reviews and the `.js` is the file
+everyone actually runs, and the two have to be kept identical in meaning.
+
+One command rebuilds every plugin's bundle in place:
+
+```bash
+npm ci && npm run build
+```
+
+`npm ci` installs the pinned toolchain (`esbuild` is pinned to an exact
+version, since its output bytes *are* the tracked artifact). The build is
+transform-only: it compiles JSX and strips types, leaves imports untouched, and
+then refuses to write a bundle that imports anything beyond
+`@hermes/plugin-sdk`, `react` and `react/jsx-runtime` - the only modules the
+desktop app injects at load time. Anything else would fail at load with a bare
+module-resolution error, which is a far worse place to find out.
+
+`npm run check` type-checks the sources against `types/hermes-plugin-sdk.d.ts`,
+this repo's local declarations for an SDK that ships none. If a Hermes build
+changes a signature, that file is where the drift surfaces.
+
+Rebuilding a clean checkout must leave `git status` clean. CI rebuilds and
+diffs on every PR, so a `.tsx` committed without its `.js` fails there rather
+than shipping broken UI to whoever installs next.
+
 ## Versioning
 
 Each plugin carries its own SemVer in its `plugin.yaml` `version:` field. That
@@ -164,10 +197,11 @@ This bumps `plugin.yaml`, splices the new section into the plugin's
 generated prose** — this is the last point at which it can be reworded, and
 rewording means amending the commit subject it came from.
 
-If `desktop/plugin.tsx` changed, rebuild and commit `.tsx` and `.js` together;
-a stale `plugin.js` ships broken UI to everyone installing from this repo. Also
-confirm the plugin README's install command, settings table and requirements
-still match the code — `release.py notes` pulls Requirements straight from it.
+If `desktop/plugin.tsx` changed, run `npm run build` and commit `.tsx` and
+`.js` together; a stale `plugin.js` ships broken UI to everyone installing from
+this repo. Also confirm the plugin README's install command, settings table and
+requirements still match the code — `release.py notes` pulls Requirements
+straight from it.
 
 **3. Validate locally.** None of this can run in CI.
 
@@ -226,6 +260,7 @@ else is local, above.
 | Job | Checks |
 | --- | --- |
 | `validate` | `plugin.yaml` name matches its folder, version is SemVer, README and CHANGELOG exist; `compileall` per plugin |
+| `desktop` | Every `desktop/plugin.js` still matches a fresh `npm run build` of its `plugin.tsx`, and the sources type-check |
 | `subject` | The PR title is a conventional commit subject, with types read from `cliff.toml` |
 | `changelog-preview` | Comments on the PR with the changelog lines it would produce, warning if any land under Uncategorized |
 

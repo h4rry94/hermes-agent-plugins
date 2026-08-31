@@ -1,0 +1,6 @@
+# The generated desktop bundles are byte-compared against a fresh
+# `npm run build` (CI runs `git diff --exit-code`). esbuild always writes LF,
+# so the working tree has to keep LF on every platform - a core.autocrlf
+# checkout would otherwise hand the build a file it is bound to "change".
+*/desktop/plugin.tsx text eol=lf
+*/desktop/plugin.js  text eol=lf

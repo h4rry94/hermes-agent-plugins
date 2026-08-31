@@ -10,7 +10,8 @@
  *
  * TypeScript source of truth; `npm run build` compiles it to the plugin.js
  * the runtime loader executes (plain ESM, jsx() calls, imports limited to
- * @hermes/plugin-sdk and react/jsx-runtime).
+ * @hermes/plugin-sdk, react and react/jsx-runtime — the build refuses to
+ * emit anything else).
  */
 
 import {
