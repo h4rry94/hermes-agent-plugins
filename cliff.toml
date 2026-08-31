@@ -1,0 +1,62 @@
+# git-cliff configuration for per-plugin changelogs.
+#
+# Changelogs in this repo are GENERATED from commit history, not hand-written.
+# The commit subject is the changelog line an installing user reads, so write
+# subjects in user voice. See RELEASING.md.
+#
+# Invoked per plugin, scoped by folder and tag prefix:
+#   git-cliff --include-path '<plugin>/**' --tag-pattern '<plugin>-v.*'
+#
+# The repo-level changelog uses cliff-repo.toml instead.
+
+[changelog]
+# Empty by design: this config is always used with `--prepend`, which
+# re-emits the header on every run and would stack duplicates. The header
+# is static boilerplate and lives permanently in each plugin CHANGELOG.md.
+header = ""
+
+# Tag names are `<plugin>-v<X.Y.Z>`; the changelog heading wants only the SemVer.
+body = """
+{% if version %}## [{{ version | split(pat="-v") | last }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}## [Unreleased]
+{% endif %}{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+
+{% for commit in commits %}- {% if commit.breaking %}**Breaking:** {% endif %}{{ commit.message | upper_first }}
+{% endfor %}{% endfor %}
+"""
+
+trim = true
+
+[git]
+conventional_commits = true
+
+# Keep unconventional commits instead of silently dropping them. They land in
+# "Uncategorized" via the catch-all parser below, and `release.py check` fails
+# on them -- a dropped commit is silent data loss in a generated changelog.
+filter_unconventional = false
+filter_commits = false
+protect_breaking_commits = true
+split_commits = false
+topo_order = false
+sort_commits = "oldest"
+
+commit_preprocessors = [
+  # Drop the trailing "(#12)" GitHub appends to squash-merge subjects.
+  { pattern = '(?m) \(#[0-9]+\)$', replace = "" },
+]
+
+# Numeric prefixes fix group ordering; `striptags` removes them for display.
+commit_parsers = [
+  { message = "^feat", group = "<!-- 0 -->Added" },
+  { message = "^(refactor|perf)", group = "<!-- 1 -->Changed" },
+  { message = "^deprecate", group = "<!-- 2 -->Deprecated" },
+  { message = "^remove", group = "<!-- 3 -->Removed" },
+  { message = "^fix", group = "<!-- 4 -->Fixed" },
+  { message = "^security", group = "<!-- 5 -->Security" },
+  { message = "^docs", group = "<!-- 6 -->Documentation" },
+  { message = "^revert", group = "<!-- 7 -->Reverted" },
+  # Infrastructure: never user-visible, so absent from a plugin changelog.
+  { message = "^(chore|ci|build|test|style)", skip = true },
+  { message = ".*", group = "<!-- 9 -->Uncategorized" },
+]
