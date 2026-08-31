@@ -41,6 +41,32 @@ def allowed_types() -> set[str]:
     return types
 
 
+def non_plugin_scopes() -> set[str]:
+    """Scopes cliff.toml skips because they name something other than a plugin.
+
+    The plugin config selects commits by path, so repo-wide work that happens
+    to touch a plugin folder would otherwise be filed as a feature of that
+    plugin. cliff.toml skips those by scope; this reads the same alternation so
+    the set is declared once.
+    """
+    parsers = tomllib.loads(CLIFF_PLUGIN.read_text(encoding="utf-8"))["git"]["commit_parsers"]
+    scopes: set[str] = set()
+    for parser in parsers:
+        if not parser.get("skip"):
+            continue
+        found = re.fullmatch(r"\^\[a-z\]\+\\\(\(([a-z|_-]+)\)\\\)", parser.get("message", ""))
+        if found:
+            scopes.update(found.group(1).split("|"))
+    if not scopes:
+        raise SystemExit("error: no non-plugin scopes found in cliff.toml")
+    return scopes
+
+
+def plugin_folders() -> set[str]:
+    """Folder names that are installable plugins, and so valid commit scopes."""
+    return {manifest.parent.name for manifest in ROOT.glob("*/plugin.yaml")}
+
+
 def check_subject(subject: str) -> list[str]:
     types = allowed_types()
     pattern = re.compile(
@@ -61,6 +87,22 @@ def check_subject(subject: str) -> list[str]:
         ]
 
     problems = []
+
+    # A scope decides which changelog the line lands in, so an unrecognised one
+    # is not cosmetic: a typo'd plugin name is skipped by neither the path
+    # filter nor the scope rule, and surfaces as a feature of whatever plugin
+    # the commit happened to touch.
+    scope = match.group("scope")
+    if scope:
+        plugins = plugin_folders()
+        other = non_plugin_scopes()
+        if scope not in plugins | other:
+            problems.append(
+                f"unknown scope {scope!r}; expected a plugin folder "
+                f"({', '.join(sorted(plugins))}) or a repo-wide scope "
+                f"({', '.join(sorted(other))})"
+            )
+
     description = match.group("desc")
     if description[:1].isupper() and not description.split()[0].isupper():
         problems.append(f"description should start lower-case: {description!r}")

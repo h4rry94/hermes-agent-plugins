@@ -57,6 +57,39 @@ drift apart.
 Append `!` (`feat(gpu-monitor)!: …`) or a `BREAKING CHANGE:` footer to mark a
 breaking change. It renders with a **Breaking:** prefix and forces a major bump.
 
+### Scopes decide which changelog a line lands in
+
+A scope names either **a plugin folder** or **the repo**. Like types, the
+repo-wide set is defined once in `cliff.toml` and read from there by
+`scripts/validate.py`.
+
+| Scope | Plugin changelog | Repo changelog |
+| --- | --- | --- |
+| `gpu-monitor` (a plugin folder) | yes | yes |
+| `repo` | *(skipped)* | yes |
+
+This matters more than it looks, because `cliff.toml` selects commits by
+**path**, not by scope. Repo-wide work routinely touches a plugin folder -
+porting the desktop build rewrote a generated banner inside `gpu-monitor/` -
+and without the scope rule the path filter alone would file repo tooling as a
+feature of that plugin. It did exactly that once, offering `gpu-monitor` 0.2.0
+whose sole headline was "rebuild desktop plugin bundles from source with one
+command": true of the repo, meaningless to someone who installed the chip.
+
+An unrecognised scope is therefore a hard failure rather than a nit. A typo
+like `feat(gpu-moniter):` matches neither the skip rule nor any plugin folder,
+so it would quietly reappear as a feature of whichever plugin the commit
+happened to touch. CI rejects it by name:
+
+```
+unknown scope 'gpu-moniter'; expected a plugin folder (gpu-monitor)
+or a repo-wide scope (repo)
+```
+
+A commit with no scope at all is still allowed, and is the right choice for
+work that touches no plugin folder - most `docs:` changes to this file, for
+instance.
+
 ### Unconventional commits are a hard failure
 
 git-cliff silently drops what it cannot parse. That is not a hypothetical
