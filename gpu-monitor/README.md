@@ -162,5 +162,5 @@ your value. A key one level off is silently ignored and the default applies.
 
 The committed `desktop/plugin.js` is a generated artifact built from
 `desktop/plugin.tsx`; Hermes loads the JavaScript file directly. Never edit it by
-hand — run `npm ci && npm run build` from the repository root and commit both
+hand — run `pnpm install && pnpm build` from the repository root and commit both
 files together. CI rebuilds and diffs, so a stale `plugin.js` fails the PR.

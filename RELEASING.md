@@ -101,20 +101,33 @@ everyone actually runs, and the two have to be kept identical in meaning.
 One command rebuilds every plugin's bundle in place:
 
 ```bash
-npm ci && npm run build
+pnpm install && pnpm build
 ```
 
-`npm ci` installs the pinned toolchain (`esbuild` is pinned to an exact
-version, since its output bytes *are* the tracked artifact). The build is
-transform-only: it compiles JSX and strips types, leaves imports untouched, and
-then refuses to write a bundle that imports anything beyond
-`@hermes/plugin-sdk`, `react` and `react/jsx-runtime` - the only modules the
-desktop app injects at load time. Anything else would fail at load with a bare
-module-resolution error, which is a far worse place to find out.
+The toolchain is pinned twice over: `packageManager` in `package.json` fixes
+the pnpm version (CI reads it from there too, so a laptop and a runner cannot
+drift onto different releases), and `esbuild` is pinned to an exact version
+rather than a caret, because its output bytes *are* the tracked artifact - a
+minor bump would surface as artifact drift. `pnpm-workspace.yaml` carries one
+setting, `allowBuilds`, permitting esbuild alone to run an install script;
+nothing else here has any business running code on install.
 
-`npm run check` type-checks the sources against `types/hermes-plugin-sdk.d.ts`,
-this repo's local declarations for an SDK that ships none. If a Hermes build
-changes a signature, that file is where the drift surfaces.
+The build itself is `build.ts`, run directly by node, which strips its types at
+load - so the build has no transpile step of its own to keep in sync. It is
+transform-only: it compiles JSX and strips types from the plugin source, leaves
+imports untouched, and then refuses to write a bundle that imports anything
+beyond `@hermes/plugin-sdk`, `react` and `react/jsx-runtime` - the only modules
+the desktop app injects at load time. Anything else would fail at load with a
+bare module-resolution error, which is a far worse place to find out. The check
+runs before the file is written, so a rejected build leaves the committed
+artifact untouched.
+
+`pnpm check` type-checks the plugin sources and `build.ts` together. The
+plugin sources are checked against `types/hermes-plugin-sdk.d.ts`, this repo's
+local declarations for an SDK that ships none; if a Hermes build changes a
+signature, that file is where the drift surfaces. `erasableSyntaxOnly` is set,
+so syntax node cannot strip (enums, namespaces, parameter properties) fails at
+check time rather than when someone runs the build.
 
 Rebuilding a clean checkout must leave `git status` clean. CI rebuilds and
 diffs on every PR, so a `.tsx` committed without its `.js` fails there rather
@@ -197,7 +210,7 @@ This bumps `plugin.yaml`, splices the new section into the plugin's
 generated prose** — this is the last point at which it can be reworded, and
 rewording means amending the commit subject it came from.
 
-If `desktop/plugin.tsx` changed, run `npm run build` and commit `.tsx` and
+If `desktop/plugin.tsx` changed, run `pnpm build` and commit `.tsx` and
 `.js` together; a stale `plugin.js` ships broken UI to everyone installing from
 this repo. Also confirm the plugin README's install command, settings table and
 requirements still match the code — `release.py notes` pulls Requirements
@@ -260,7 +273,7 @@ else is local, above.
 | Job | Checks |
 | --- | --- |
 | `validate` | `plugin.yaml` name matches its folder, version is SemVer, README and CHANGELOG exist; `compileall` per plugin |
-| `desktop` | Every `desktop/plugin.js` still matches a fresh `npm run build` of its `plugin.tsx`, and the sources type-check |
+| `desktop` | Every `desktop/plugin.js` still matches a fresh `pnpm build` of its `plugin.tsx`; sources and `build.ts` type-check |
 | `subject` | The PR title is a conventional commit subject, with types read from `cliff.toml` |
 | `changelog-preview` | Comments on the PR with the changelog lines it would produce, warning if any land under Uncategorized |
 
