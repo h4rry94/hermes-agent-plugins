@@ -28,6 +28,9 @@ import { Component, type ReactNode, useEffect, useState } from 'react'
 
 const ID = 'gpu-monitor'
 const DEFAULT_POLL_SECONDS = 2
+// Mirrors vram_warn_percent's default in plugin.yaml; used only until the
+// first sample arrives, or if the backend predates the setting.
+const DEFAULT_VRAM_WARN_PERCENT = 92
 
 /**
  * Error blast wall for the chip, mirroring the app's own ContribBoundary
@@ -72,7 +75,10 @@ interface Gpu {
   name: string
 }
 
-type GpuStats = ({ ok: true; gpus: Gpu[] } | { ok: false; error: string }) & { pollSeconds: number }
+type GpuStats = ({ ok: true; gpus: Gpu[] } | { ok: false; error: string }) & {
+  pollSeconds: number
+  vramWarnPercent: number
+}
 
 let pluginCtx: PluginContext | null = null
 
@@ -132,8 +138,12 @@ function GpuChip() {
 
   const gpus = data?.ok ? data.gpus : null
   // VRAM pressure gets the accent color so a nearly-full card is visible at
-  // a glance without watching the numbers.
-  const hot = gpus?.some(g => g.memUsed / g.memTotal > 0.92)
+  // a glance without watching the numbers. The threshold comes from the
+  // backend with every sample, like pollSeconds, so `hermes config set` takes
+  // effect without a gateway restart. An older backend omits it, hence the
+  // fallback to the manifest default.
+  const warnPercent = data?.vramWarnPercent ?? DEFAULT_VRAM_WARN_PERCENT
+  const hot = gpus?.some(g => g.memTotal > 0 && (g.memUsed / g.memTotal) * 100 > warnPercent)
 
   return (
     <Tip label={tipText(data, error)}>
