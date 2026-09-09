@@ -5,6 +5,16 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this plugin
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
 [RELEASING.md](../RELEASING.md) for the release process.
 
+## [0.3.0] - 2026-09-09
+
+### Added
+
+- Report GPU temperature and power draw
+
+### Fixed
+
+- Stay out of the status bar on machines with no NVIDIA GPU
+
 ## [0.2.0] - 2026-09-09
 
 ### Added
