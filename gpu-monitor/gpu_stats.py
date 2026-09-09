@@ -3,9 +3,104 @@
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 _QUERY = "utilization.gpu,memory.used,memory.total,name"
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+
+#: ``reason`` on the one failure that is not a failure: the machine has no
+#: NVIDIA card, so there is nothing to report and never will be. Readers use it
+#: to stay quiet instead of showing an error. Every other unsuccessful result
+#: carries no ``reason`` at all.
+NO_GPU = "no-gpu"
+
+_NVIDIA_PCI_VENDOR = "0x10de"
+_PCI_DEVICES = Path("/sys/bus/pci/devices")
+
+# Hardware presence cannot change while the gateway runs, and the check would
+# otherwise run on every poll. Only the hardware answer is cached: driver state
+# is re-read each call, so installing a driver mid-session is picked up without
+# a restart. Two variables rather than a sentinel value, because None is itself
+# a meaningful answer here.
+_hardware_checked = False
+_hardware_answer: bool | None = None
+
+
+def _linux_has_nvidia() -> bool | None:
+    """Read PCI vendor ids from sysfs, which the kernel fills in regardless of
+    whether the NVIDIA driver is loaded - so this answers "is the card in the
+    machine", not "is it usable"."""
+    try:
+        devices = list(_PCI_DEVICES.iterdir())
+    except OSError:
+        return None
+    found_any = False
+    for device in devices:
+        try:
+            vendor = (device / "vendor").read_text(encoding="ascii").strip().lower()
+        except OSError:
+            continue
+        found_any = True
+        if vendor == _NVIDIA_PCI_VENDOR:
+            return True
+    # Having read at least one vendor id proves sysfs is populated, so "no
+    # 0x10de anywhere" is a real answer rather than an empty directory.
+    return False if found_any else None
+
+
+def _windows_has_nvidia() -> bool | None:
+    """Enumerate the PCI branch of the device tree for an NVIDIA vendor id.
+
+    Windows has no sysfs, and `Get-CimInstance Win32_VideoController` would mean
+    spawning PowerShell on every poll - far too expensive at a 2-second default
+    interval. winreg is in the standard library and reads the same enumeration
+    the driver stack does.
+    """
+    try:
+        import winreg
+    except ImportError:  # pragma: no cover - Windows only
+        return None
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Enum\PCI"
+        ) as key:
+            count = winreg.QueryInfoKey(key)[0]
+            for index in range(count):
+                if winreg.EnumKey(key, index).upper().startswith("VEN_10DE"):
+                    return True
+        # An empty PCI branch means the enumeration was not readable rather
+        # than that the machine has no PCI devices, so it is not an answer.
+        return False if count else None
+    except OSError:
+        return None
+
+
+def has_nvidia_hardware() -> bool | None:
+    """Whether this machine has an NVIDIA GPU installed at all.
+
+    ``None`` means the question could not be answered here. Callers must treat
+    that as "assume present": entering the quiet no-GPU state needs positive
+    evidence, and being wrong in that direction shows a slightly noisy error
+    rather than silently hiding a real driver problem.
+    """
+    global _hardware_checked, _hardware_answer
+    if _hardware_checked:
+        return _hardware_answer
+
+    if sys.platform.startswith("linux"):
+        answer = _linux_has_nvidia()
+    elif sys.platform == "win32":
+        answer = _windows_has_nvidia()
+    elif sys.platform == "darwin":
+        # No Mac has shipped with an NVIDIA GPU since 2019, and macOS carries
+        # no driver for one.
+        answer = False
+    else:
+        answer = None
+
+    _hardware_answer = answer
+    _hardware_checked = True
+    return answer
 
 
 def _parse_int(value: str) -> int | None:
@@ -50,6 +145,18 @@ def read_gpus() -> dict:
     """Run ``nvidia-smi`` once and return normalized GPU samples."""
     executable = shutil.which("nvidia-smi")
     if not executable:
+        # Two very different situations reach here. A machine with no NVIDIA
+        # card has nothing to report and never will, so it gets a quiet result
+        # readers can stay silent about. A machine that has a card but no
+        # usable nvidia-smi has a real problem worth surfacing, and so keeps
+        # the error it has always had. Only positive evidence of absence
+        # earns the quiet path; see has_nvidia_hardware.
+        if has_nvidia_hardware() is False:
+            return {
+                "ok": False,
+                "reason": NO_GPU,
+                "error": "no NVIDIA GPU detected on this machine",
+            }
         return {"ok": False, "error": "nvidia-smi not found on PATH"}
     try:
         process = subprocess.run(
@@ -77,6 +184,9 @@ def read_gpus() -> dict:
 def format_gpu_status(sample: dict) -> str:
     """Render a sample for Hermes' in-session ``/gpu`` command."""
     if not sample.get("ok"):
+        # Same one-line shape either way, but the no-GPU case is a statement of
+        # fact rather than a fault: no advice to install drivers, nothing for
+        # the reader to act on.
         return f"GPU Monitor: {sample.get('error') or 'GPU statistics unavailable'}"
 
     rows = []

@@ -12,8 +12,9 @@ and reads that endpoint.
 
 - Hermes Agent with unified desktop-plugin support (developed against v0.20.6)
 - An NVIDIA GPU with `nvidia-smi` on `PATH`
-- Windows or Linux. macOS has no current NVIDIA driver, so `nvidia-smi` is
-  absent and the chip stays in its error state.
+- Windows or Linux. macOS has no current NVIDIA driver, so the plugin installs
+  and loads but reports that no NVIDIA GPU is present, and the chip stays out of
+  the status bar.
 
 No Python packages are needed beyond the Hermes runtime — the plugin is
 stdlib-only and shells out to `nvidia-smi`.
@@ -132,6 +133,15 @@ want the settings gone too. Restart the gateway afterwards.
 bundles a driver. Install the NVIDIA driver and confirm `nvidia-smi` runs in the
 same shell the gateway starts from. On Windows the executable normally lives in
 `C:\Windows\System32`; in WSL or a container, the GPU must be passed through.
+
+**No chip appears at all, and `/gpu` says no NVIDIA GPU was detected.** This
+machine has no NVIDIA card, so the plugin has nothing to report and stays out of
+the status bar rather than parking a permanent error there. Presence is read
+from the operating system's own device list — PCI vendor ids under
+`/sys/bus/pci/devices` on Linux, the `PCI` branch of the device tree on Windows
+— so it is independent of whether a driver is installed. A machine that *does*
+have a card but no working `nvidia-smi` gets the error above instead, and so
+does any machine where presence cannot be determined.
 
 **Install fails with a manifest error.**
 

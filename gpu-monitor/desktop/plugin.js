@@ -36,6 +36,7 @@ class ChipBoundary extends Component {
     ) });
   }
 }
+const NO_GPU = "no-gpu";
 let pluginCtx = null;
 function gib(mib) {
   return (mib / 1024).toFixed(1);
@@ -76,6 +77,7 @@ function GpuChip() {
       setPollSeconds(data.pollSeconds);
     }
   }, [data?.pollSeconds, pollSeconds]);
+  if (data && !data.ok && data.reason === NO_GPU) return null;
   const gpus = data?.ok ? data.gpus : null;
   const warnPercent = data?.vramWarnPercent ?? DEFAULT_VRAM_WARN_PERCENT;
   const hot = gpus?.some((g) => g.memTotal > 0 && g.memUsed / g.memTotal * 100 >= warnPercent);
