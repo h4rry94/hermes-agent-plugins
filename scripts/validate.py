@@ -141,7 +141,13 @@ def check_plugins() -> list[str]:
                 f"{name}/plugin.yaml: version {version.group(1)!r} is not X.Y.Z"
             )
 
-        for required in ("README.md", "CHANGELOG.md"):
+        # __init__.py is not optional, even for a plugin with no Python
+        # behaviour at all: `hermes plugins install owner/repo/<folder>` loads
+        # every plugin through the agent-plugin loader, which raises
+        # `No __init__.py` and installs nothing. A UI-only plugin therefore
+        # ships an empty one. Caught here rather than at install time, where it
+        # would be the installing user who finds out.
+        for required in ("README.md", "CHANGELOG.md", "__init__.py"):
             if not (folder / required).is_file():
                 problems.append(f"{name}/: missing {required}")
 

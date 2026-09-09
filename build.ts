@@ -27,7 +27,7 @@
  * Rebuilding a clean checkout must leave `git status` clean; CI enforces that.
  */
 
-import { build } from 'esbuild'
+import { build, type Metafile } from 'esbuild'
 import { existsSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -57,16 +57,20 @@ interface Target {
   shown: string
 }
 
-/** Every module specifier an emitted ESM file imports or re-exports. */
-function importedModules(code: string): Set<string> {
-  const specifiers = new Set<string>()
-  // Side-effect imports: import "spec"
-  for (const [, spec] of code.matchAll(/^import\s+["']([^"']+)["']/gm)) specifiers.add(spec)
-  // Bound imports and re-exports: import ... from "spec" / export ... from "spec"
-  for (const [, spec] of code.matchAll(/\bfrom\s*["']([^"']+)["']/g)) specifiers.add(spec)
-  // Dynamic imports: import("spec")
-  for (const [, spec] of code.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)) specifiers.add(spec)
-  return specifiers
+/**
+ * Every module specifier the emitted file imports or re-exports, taken from
+ * esbuild's own metafile.
+ *
+ * This used to scan the emitted text with regexes, which read any string
+ * literal following the word `from` as an import - so a plugin containing
+ * `console.log('loaded from "cache"')` failed the build with a stray import
+ * named `cache`. The metafile is built from the AST, so it lists exactly the
+ * specifiers esbuild resolved and nothing a comment or string can fake.
+ */
+function importedModules(metafile: Metafile | undefined, shown: string): Set<string> {
+  const outputs = Object.values(metafile?.outputs ?? {})
+  if (outputs.length === 0) throw new Error(`${shown}: esbuild returned no metafile outputs`)
+  return new Set(outputs.flatMap(output => output.imports.map(entry => entry.path)))
 }
 
 const targets: Target[] = readdirSync(repo, { withFileTypes: true })
@@ -101,7 +105,10 @@ for (const { entry, outfile, shown } of targets) {
     format: 'esm',
     jsx: 'automatic',
     target: 'es2022',
-    banner: { js: BANNER }
+    banner: { js: BANNER },
+    // The import check reads this rather than the emitted text; see
+    // importedModules above for why.
+    metafile: true
   })
 
   const emitted = result.outputFiles?.[0]
@@ -111,7 +118,9 @@ for (const { entry, outfile, shown } of targets) {
     continue
   }
 
-  const stray = [...importedModules(emitted.text)].filter(spec => !RUNTIME_IMPORTS.has(spec))
+  const stray = [...importedModules(result.metafile, shown)].filter(
+    spec => !RUNTIME_IMPORTS.has(spec)
+  )
   if (stray.length > 0) {
     failed = true
     console.error(`${shown}: imports the desktop app does not inject: ${stray.join(', ')}`)
