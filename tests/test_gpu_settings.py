@@ -107,6 +107,30 @@ class VramWarnPercentTests(unittest.TestCase):
         self.assertEqual(settings.vram_warn_percent(values), 60)
 
 
+class ChipThresholdComparisonTests(unittest.TestCase):
+    """The maximum of 100 is only meaningful if the chip compares inclusively.
+
+    The comparison itself lives in TypeScript, which this stdlib-only suite
+    cannot execute -- but a strict `>` there silently disables the documented
+    maximum (memUsed never exceeds memTotal), so the pairing is pinned at the
+    source level in both the checked-in source and its generated bundle.
+    """
+
+    def sources(self):
+        desktop = ROOT / "gpu-monitor" / "desktop"
+        return [desktop / "plugin.tsx", desktop / "plugin.js"]
+
+    def test_max_is_one_hundred(self):
+        self.assertEqual(settings.MAX_VRAM_WARN_PERCENT, 100)
+
+    def test_the_chip_compares_at_or_above_the_threshold(self):
+        for path in self.sources():
+            with self.subTest(path=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn(">= warnPercent", text)
+                self.assertNotIn("> warnPercent", text.replace(">= warnPercent", ""))
+
+
 class LoadSettingsTests(unittest.TestCase):
     """load_settings digs through config.yaml and never raises."""
 

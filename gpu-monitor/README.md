@@ -88,9 +88,12 @@ hermes config set plugins.entries.gpu-monitor.settings.poll_seconds 5
   while the desktop window is in the background, and a 1-second server-side
   cache keeps concurrent pollers from stacking `nvidia-smi` processes.
 - `vram_warn_percent` is the VRAM use at which the chip switches to the accent
-  color, so a nearly-full card is visible at a glance. It travels with the
-  sample like `poll_seconds`, so a change applies on the chip's next poll. Raise
-  it if a workload legitimately sits near capacity; lower it for earlier warning.
+  color, so a nearly-full card is visible at a glance. The whole chip changes
+  color when **any** GPU reaches the threshold — on a multi-GPU machine it does
+  not say which one, so read the numbers or the tooltip for that. `100` warns
+  only on a completely full card. It travels with the sample like
+  `poll_seconds`, so a change applies on the chip's next poll. Raise it if a
+  workload legitimately sits near capacity; lower it for earlier warning.
 - `cli_command_enabled` is read once, when the Python component registers. Set
   it to `false` to keep the status-bar chip but drop `/gpu` from sessions.
 
