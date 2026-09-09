@@ -72,6 +72,10 @@ interface Gpu {
   util: number | null // null when nvidia-smi reports [N/A] (MIG, some vGPU)
   memUsed: number // MiB
   memTotal: number // MiB
+  // Both null when the card does not report them, and absent entirely from a
+  // backend older than 0.3.0 — hence optional as well as nullable.
+  tempC?: number | null
+  powerW?: number | null
   name: string
 }
 
@@ -118,11 +122,19 @@ function tipText(data: GpuStats | undefined, error: unknown): string {
   }
 
   const stats = data.gpus
-    .map(
-      g =>
-        `${g.name}: ${g.util === null ? 'utilization unavailable' : `${g.util}% util`}, ` +
+    .map(g => {
+      // Temperature and power live here rather than in the chip label: the
+      // status bar is width-constrained and shared with every other
+      // contribution, and these two are numbers you go looking for rather
+      // than watch. Each is dropped when the card does not report it.
+      const parts = [
+        g.util === null ? 'utilization unavailable' : `${g.util}% util`,
         `${g.memUsed}/${g.memTotal} MiB VRAM`
-    )
+      ]
+      if (g.tempC != null) parts.push(`${g.tempC}°C`)
+      if (g.powerW != null) parts.push(`${g.powerW} W`)
+      return `${g.name}: ${parts.join(', ')}`
+    })
     .join(' — ')
   return `${stats} — polling every ${data.pollSeconds}s from config.yaml`
 }

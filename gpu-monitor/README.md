@@ -56,6 +56,17 @@ hermes plugins list
 `gpu-monitor` should show as `enabled`. Then run `/gpu` in a CLI or gateway
 session, and check the status bar in the desktop app.
 
+`/gpu` prints one line per card:
+
+```text
+GPU 0 · 0% · VRAM 1.4/24.0 GiB · 47°C · 17 W · NVIDIA GeForce RTX 3090 Ti
+```
+
+Temperature and power draw are shown when the card reports them, and left out
+when it does not — MIG partitions, vGPU and some laptop parts have no such
+telemetry. The status-bar chip keeps utilization and VRAM only, because the bar
+is shared with every other contribution; both figures are in its tooltip.
+
 ## Settings
 
 Values live in the plugin's own namespace in `config.yaml`
