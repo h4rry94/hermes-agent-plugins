@@ -111,6 +111,20 @@ class ParseOutputTests(unittest.TestCase):
         self.assertEqual(len(sample["gpus"]), 1)
         self.assertEqual(sample["gpus"][0]["name"], "Good GPU")
 
+    def test_zero_total_memory_skips_the_row(self):
+        # A zero memory.total is a driver or vGPU glitch, not a card. Every
+        # consumer divides by it - the chip's VRAM warning and /gpu's GiB
+        # figures both - so the row is dropped here rather than guarded once
+        # per reader.
+        sample = gpu_stats._parse_output("42, 0, 0, Glitched GPU\n7, 100, 200, Good GPU")
+        self.assertEqual(len(sample["gpus"]), 1)
+        self.assertEqual(sample["gpus"][0]["name"], "Good GPU")
+
+    def test_only_a_zero_total_row_is_an_error(self):
+        sample = gpu_stats._parse_output("42, 0, 0, Glitched GPU")
+        self.assertFalse(sample["ok"])
+        self.assertIn("unparseable nvidia-smi output", sample["error"])
+
     def test_all_rows_unparseable_is_an_error(self):
         sample = gpu_stats._parse_output("[N/A], [N/A], [N/A], Broken GPU")
         self.assertFalse(sample["ok"])
