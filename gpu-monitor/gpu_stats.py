@@ -27,7 +27,11 @@ def _parse_output(output: str) -> dict:
         # missing: nvidia-smi reports [N/A] for utilization.gpu on MIG-enabled
         # and some virtualized cards, and dropping the whole row for it hid a
         # GPU whose memory figures were right there and perfectly good.
-        if mem_used is None or mem_total is None:
+        #
+        # A zero total is a driver or vGPU glitch, not a card: every consumer
+        # divides by it, so the row is dropped here rather than guarded once
+        # per reader.
+        if mem_used is None or mem_total is None or mem_total <= 0:
             continue
         gpus.append(
             {
