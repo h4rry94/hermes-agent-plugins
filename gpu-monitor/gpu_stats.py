@@ -5,7 +5,16 @@ import subprocess
 import sys
 from pathlib import Path
 
-_QUERY = "utilization.gpu,memory.used,memory.total,name"
+# Name stays last because a model name can itself contain commas, so it is the
+# only field the parser can rejoin. Anything added here goes before it, and the
+# parser's column count has to move with it - the two are one contract, pinned
+# by a test.
+_QUERY = "utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,name"
+
+#: Fields in _QUERY, and so the shortest row the parser will accept. The name
+#: is the last of them and may itself contain commas, so everything from this
+#: index on is rejoined into it.
+_COLUMNS = 6
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 #: ``reason`` on the one failure that is not a failure: the machine has no
@@ -110,11 +119,24 @@ def _parse_int(value: str) -> int | None:
         return None
 
 
+def _parse_rounded(value: str) -> int | None:
+    """A field nvidia-smi reports with decimals, rounded to a whole number.
+
+    power.draw comes back as e.g. `142.35`, which int() rejects outright. The
+    fraction of a watt is noise at the resolution anything here displays, so it
+    is rounded away at the boundary rather than carried through two renderers.
+    """
+    try:
+        return round(float(value))
+    except ValueError:
+        return None
+
+
 def _parse_output(output: str) -> dict:
     gpus = []
     for line in output.strip().splitlines():
         parts = [part.strip() for part in line.split(",")]
-        if len(parts) < 4:
+        if len(parts) < _COLUMNS:
             continue
         mem_used = _parse_int(parts[1])
         mem_total = _parse_int(parts[2])
@@ -133,7 +155,13 @@ def _parse_output(output: str) -> dict:
                 "util": _parse_int(parts[0]),
                 "memUsed": mem_used,
                 "memTotal": mem_total,
-                "name": ", ".join(parts[3:]),
+                # Both are reported as [N/A] or [Not Supported] on plenty of
+                # real cards - MIG partitions, vGPU, and laptop parts with no
+                # power telemetry. Treated exactly like a missing utilization:
+                # the field goes quiet, the GPU stays listed.
+                "tempC": _parse_int(parts[3]),
+                "powerW": _parse_rounded(parts[4]),
+                "name": ", ".join(parts[_COLUMNS - 1 :]),
             }
         )
     if not gpus:
@@ -194,8 +222,18 @@ def format_gpu_status(sample: dict) -> str:
         used_gib = gpu["memUsed"] / 1024
         total_gib = gpu["memTotal"] / 1024
         util = gpu["util"]
-        rows.append(
-            f"GPU {index} · {f'{util}%' if util is not None else 'util n/a'} · "
-            f"VRAM {used_gib:.1f}/{total_gib:.1f} GiB · {gpu['name']}"
-        )
+        fields = [
+            f"GPU {index}",
+            f"{util}%" if util is not None else "util n/a",
+            f"VRAM {used_gib:.1f}/{total_gib:.1f} GiB",
+        ]
+        # Omitted rather than shown as n/a: a card that cannot report its
+        # temperature says so once in the README, not on every line of every
+        # sample.
+        if gpu.get("tempC") is not None:
+            fields.append(f"{gpu['tempC']}°C")
+        if gpu.get("powerW") is not None:
+            fields.append(f"{gpu['powerW']} W")
+        fields.append(gpu["name"])
+        rows.append(" · ".join(fields))
     return "\n".join(rows) or "GPU Monitor: no GPUs reported by nvidia-smi"

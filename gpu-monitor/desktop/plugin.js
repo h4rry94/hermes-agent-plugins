@@ -58,9 +58,15 @@ function tipText(data, error) {
   if (!data.ok) {
     return `GPU monitor \u2014 ${data.error} \u2014 polling every ${data.pollSeconds}s`;
   }
-  const stats = data.gpus.map(
-    (g) => `${g.name}: ${g.util === null ? "utilization unavailable" : `${g.util}% util`}, ${g.memUsed}/${g.memTotal} MiB VRAM`
-  ).join(" \u2014 ");
+  const stats = data.gpus.map((g) => {
+    const parts = [
+      g.util === null ? "utilization unavailable" : `${g.util}% util`,
+      `${g.memUsed}/${g.memTotal} MiB VRAM`
+    ];
+    if (g.tempC != null) parts.push(`${g.tempC}\xB0C`);
+    if (g.powerW != null) parts.push(`${g.powerW} W`);
+    return `${g.name}: ${parts.join(", ")}`;
+  }).join(" \u2014 ");
   return `${stats} \u2014 polling every ${data.pollSeconds}s from config.yaml`;
 }
 function GpuChip() {

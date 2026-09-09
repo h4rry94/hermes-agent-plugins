@@ -52,7 +52,7 @@ class ParseOutputTests(unittest.TestCase):
     """_parse_output turns raw CSV into normalized samples."""
 
     def test_single_gpu(self):
-        sample = gpu_stats._parse_output("42, 8192, 24564, NVIDIA GeForce RTX 4090\n")
+        sample = gpu_stats._parse_output("42, 8192, 24564, 61, 145.32, NVIDIA GeForce RTX 4090\n")
         self.assertEqual(
             sample,
             {
@@ -62,6 +62,10 @@ class ParseOutputTests(unittest.TestCase):
                         "util": 42,
                         "memUsed": 8192,
                         "memTotal": 24564,
+                        "tempC": 61,
+                        # 145.32 W, rounded at the boundary: int() rejects the
+                        # decimal outright and a fraction of a watt is noise.
+                        "powerW": 145,
                         "name": "NVIDIA GeForce RTX 4090",
                     }
                 ],
@@ -69,7 +73,7 @@ class ParseOutputTests(unittest.TestCase):
         )
 
     def test_multiple_gpus_keep_order(self):
-        output = "10, 1024, 8192, GPU Zero\n90, 7000, 8192, GPU One\n"
+        output = "10, 1024, 8192, 55, 90.0, GPU Zero\n90, 7000, 8192, 78, 310.5, GPU One\n"
         sample = gpu_stats._parse_output(output)
         self.assertTrue(sample["ok"])
         self.assertEqual([g["name"] for g in sample["gpus"]], ["GPU Zero", "GPU One"])
@@ -78,17 +82,17 @@ class ParseOutputTests(unittest.TestCase):
     def test_name_containing_a_comma_is_rejoined(self):
         # The query is comma-separated and the name field is last, so a comma in
         # the model name splits into extra parts that have to be put back.
-        sample = gpu_stats._parse_output("5, 100, 200, NVIDIA RTX 4090, Founders Edition")
+        sample = gpu_stats._parse_output("5, 100, 200, 60, 120.0, NVIDIA RTX 4090, Founders Edition")
         self.assertEqual(sample["gpus"][0]["name"], "NVIDIA RTX 4090, Founders Edition")
 
     def test_short_row_is_skipped(self):
-        sample = gpu_stats._parse_output("42, 8192, 24564\n7, 100, 200, Good GPU")
+        sample = gpu_stats._parse_output("42, 8192, 24564\n7, 100, 200, 60, 120.0, Good GPU")
         self.assertTrue(sample["ok"])
         self.assertEqual(len(sample["gpus"]), 1)
         self.assertEqual(sample["gpus"][0]["name"], "Good GPU")
 
     def test_non_numeric_row_is_skipped(self):
-        sample = gpu_stats._parse_output("[N/A], [N/A], [N/A], Broken GPU\n7, 100, 200, Good GPU")
+        sample = gpu_stats._parse_output("[N/A], [N/A], [N/A], [N/A], [N/A], Broken GPU\n7, 100, 200, 60, 120.0, Good GPU")
         self.assertTrue(sample["ok"])
         self.assertEqual(len(sample["gpus"]), 1)
         self.assertEqual(sample["gpus"][0]["name"], "Good GPU")
@@ -97,7 +101,7 @@ class ParseOutputTests(unittest.TestCase):
         # nvidia-smi reports [N/A] for utilization.gpu on MIG-enabled and some
         # virtualized cards. The VRAM figures beside it are real, so the GPU
         # must survive rather than vanish from the chip and /gpu.
-        sample = gpu_stats._parse_output("[N/A], 1024, 8192, NVIDIA A100-SXM4-40GB")
+        sample = gpu_stats._parse_output("[N/A], 1024, 8192, 44, 250.0, NVIDIA A100-SXM4-40GB")
         self.assertTrue(sample["ok"])
         self.assertEqual(len(sample["gpus"]), 1)
         gpu = sample["gpus"][0]
@@ -106,10 +110,36 @@ class ParseOutputTests(unittest.TestCase):
         self.assertEqual(gpu["memTotal"], 8192)
         self.assertEqual(gpu["name"], "NVIDIA A100-SXM4-40GB")
 
+    def test_temperature_and_power_are_parsed(self):
+        gpu = gpu_stats._parse_output("30, 100, 200, 68, 142.35, Card")["gpus"][0]
+        self.assertEqual(gpu["tempC"], 68)
+        # power.draw carries decimals nvidia-smi never rounds for us, and int()
+        # rejects them outright rather than truncating.
+        self.assertEqual(gpu["powerW"], 142)
+
+    def test_na_temperature_keeps_the_gpu(self):
+        # Datacenter partitions and some laptop parts report no temperature.
+        # The card is still real, so the field goes quiet and the row stays -
+        # the same treatment [N/A] utilization already gets.
+        gpu = gpu_stats._parse_output("30, 100, 200, [N/A], 142.35, Card")["gpus"][0]
+        self.assertIsNone(gpu["tempC"])
+        self.assertEqual(gpu["name"], "Card")
+
+    def test_unsupported_power_keeps_the_gpu(self):
+        gpu = gpu_stats._parse_output("30, 100, 200, 68, [Not Supported], Card")["gpus"][0]
+        self.assertIsNone(gpu["powerW"])
+        self.assertEqual(gpu["tempC"], 68)
+
+    def test_both_unavailable_still_keeps_the_gpu(self):
+        gpu = gpu_stats._parse_output("30, 100, 200, [N/A], [N/A], Card")["gpus"][0]
+        self.assertIsNone(gpu["tempC"])
+        self.assertIsNone(gpu["powerW"])
+        self.assertEqual(gpu["memUsed"], 100)
+
     def test_na_memory_still_skips_the_row(self):
         # VRAM is what makes a row worth keeping; without it there is nothing
         # to show.
-        sample = gpu_stats._parse_output("42, [N/A], [N/A], Broken GPU\n7, 100, 200, Good GPU")
+        sample = gpu_stats._parse_output("42, [N/A], [N/A], 60, 120.0, Broken GPU\n7, 100, 200, 60, 120.0, Good GPU")
         self.assertEqual(len(sample["gpus"]), 1)
         self.assertEqual(sample["gpus"][0]["name"], "Good GPU")
 
@@ -118,17 +148,17 @@ class ParseOutputTests(unittest.TestCase):
         # consumer divides by it - the chip's VRAM warning and /gpu's GiB
         # figures both - so the row is dropped here rather than guarded once
         # per reader.
-        sample = gpu_stats._parse_output("42, 0, 0, Glitched GPU\n7, 100, 200, Good GPU")
+        sample = gpu_stats._parse_output("42, 0, 0, 60, 120.0, Glitched GPU\n7, 100, 200, 60, 120.0, Good GPU")
         self.assertEqual(len(sample["gpus"]), 1)
         self.assertEqual(sample["gpus"][0]["name"], "Good GPU")
 
     def test_only_a_zero_total_row_is_an_error(self):
-        sample = gpu_stats._parse_output("42, 0, 0, Glitched GPU")
+        sample = gpu_stats._parse_output("42, 0, 0, 60, 120.0, Glitched GPU")
         self.assertFalse(sample["ok"])
         self.assertIn("unparseable nvidia-smi output", sample["error"])
 
     def test_all_rows_unparseable_is_an_error(self):
-        sample = gpu_stats._parse_output("[N/A], [N/A], [N/A], Broken GPU")
+        sample = gpu_stats._parse_output("[N/A], [N/A], [N/A], [N/A], [N/A], Broken GPU")
         self.assertFalse(sample["ok"])
         self.assertIn("unparseable nvidia-smi output", sample["error"])
 
@@ -138,7 +168,7 @@ class ParseOutputTests(unittest.TestCase):
         self.assertIn("unparseable", sample["error"])
 
     def test_blank_lines_between_rows_are_ignored(self):
-        sample = gpu_stats._parse_output("10, 1, 2, A\n\n20, 3, 4, B\n")
+        sample = gpu_stats._parse_output("10, 1, 2, 60, 120.0, A\n\n20, 3, 4, 60, 120.0, B\n")
         self.assertEqual(len(sample["gpus"]), 2)
 
 
@@ -244,7 +274,7 @@ class ReadGpusTests(unittest.TestCase):
 
     def test_success_parses_stdout(self):
         with mock.patch("shutil.which", return_value="/usr/bin/nvidia-smi"), mock.patch(
-            "subprocess.run", return_value=_completed(stdout="30, 2048, 8192, Test GPU\n")
+            "subprocess.run", return_value=_completed(stdout="30, 2048, 8192, 60, 120.0, Test GPU\n")
         ):
             sample = gpu_stats.read_gpus()
         self.assertTrue(sample["ok"])
@@ -254,11 +284,11 @@ class ReadGpusTests(unittest.TestCase):
         # The query string and the parser's field order are one contract split
         # across two places; a reordered query would parse into wrong keys.
         with mock.patch("shutil.which", return_value="/usr/bin/nvidia-smi"), mock.patch(
-            "subprocess.run", return_value=_completed(stdout="1, 2, 3, X")
+            "subprocess.run", return_value=_completed(stdout="1, 2, 3, 4, 5, X")
         ) as run:
             gpu_stats.read_gpus()
         argv = run.call_args.args[0]
-        self.assertIn("--query-gpu=utilization.gpu,memory.used,memory.total,name", argv)
+        self.assertIn("--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,name", argv)
         self.assertIn("--format=csv,noheader,nounits", argv)
 
 
@@ -314,6 +344,55 @@ class FormatGpuStatusTests(unittest.TestCase):
         # sample by hand, but the "".join of nothing would otherwise be blank.
         text = gpu_stats.format_gpu_status({"ok": True, "gpus": []})
         self.assertEqual(text, "GPU Monitor: no GPUs reported by nvidia-smi")
+
+    def test_temperature_and_power_are_shown_when_present(self):
+        text = gpu_stats.format_gpu_status(
+            {
+                "ok": True,
+                "gpus": [
+                    {
+                        "util": 30,
+                        "memUsed": 1024,
+                        "memTotal": 2048,
+                        "tempC": 68,
+                        "powerW": 142,
+                        "name": "Card",
+                    }
+                ],
+            }
+        )
+        self.assertIn("68°C", text)
+        self.assertIn("142 W", text)
+        self.assertTrue(text.endswith("Card"))
+
+    def test_unavailable_fields_are_omitted_not_shown_as_na(self):
+        text = gpu_stats.format_gpu_status(
+            {
+                "ok": True,
+                "gpus": [
+                    {
+                        "util": 30,
+                        "memUsed": 1024,
+                        "memTotal": 2048,
+                        "tempC": None,
+                        "powerW": None,
+                        "name": "Card",
+                    }
+                ],
+            }
+        )
+        self.assertNotIn("°C", text)
+        self.assertNotIn(" W", text)
+        self.assertIn("VRAM 1.0/2.0 GiB", text)
+        self.assertTrue(text.endswith("Card"))
+
+    def test_a_sample_built_without_the_new_keys_still_renders(self):
+        # A hand-built sample, or one from a module that predates the fields.
+        # .get() rather than [] is what keeps this from raising.
+        text = gpu_stats.format_gpu_status(
+            {"ok": True, "gpus": [{"util": 30, "memUsed": 1024, "memTotal": 2048, "name": "Card"}]}
+        )
+        self.assertIn("GPU 0 · 30% · VRAM 1.0/2.0 GiB · Card", text)
 
     def test_no_gpu_reads_as_a_statement_of_fact(self):
         text = gpu_stats.format_gpu_status(
