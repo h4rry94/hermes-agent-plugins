@@ -77,7 +77,9 @@ interface Gpu {
 
 type GpuStats = ({ ok: true; gpus: Gpu[] } | { ok: false; error: string }) & {
   pollSeconds: number
-  vramWarnPercent: number
+  // Optional: a hot-reloaded plugin.js can be talking to a backend that
+  // predates the setting and awaits a gateway restart.
+  vramWarnPercent?: number
 }
 
 let pluginCtx: PluginContext | null = null
@@ -143,7 +145,9 @@ function GpuChip() {
   // effect without a gateway restart. An older backend omits it, hence the
   // fallback to the manifest default.
   const warnPercent = data?.vramWarnPercent ?? DEFAULT_VRAM_WARN_PERCENT
-  const hot = gpus?.some(g => g.memTotal > 0 && (g.memUsed / g.memTotal) * 100 > warnPercent)
+  // At or above, not past: the documented maximum of 100 has to mean "warn
+  // when the card is full", and memUsed never exceeds memTotal.
+  const hot = gpus?.some(g => g.memTotal > 0 && (g.memUsed / g.memTotal) * 100 >= warnPercent)
 
   return (
     <Tip label={tipText(data, error)}>

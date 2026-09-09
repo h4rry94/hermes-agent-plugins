@@ -78,7 +78,7 @@ function GpuChip() {
   }, [data?.pollSeconds, pollSeconds]);
   const gpus = data?.ok ? data.gpus : null;
   const warnPercent = data?.vramWarnPercent ?? DEFAULT_VRAM_WARN_PERCENT;
-  const hot = gpus?.some((g) => g.memTotal > 0 && g.memUsed / g.memTotal * 100 > warnPercent);
+  const hot = gpus?.some((g) => g.memTotal > 0 && g.memUsed / g.memTotal * 100 >= warnPercent);
   return /* @__PURE__ */ jsx(Tip, { label: tipText(data, error), children: /* @__PURE__ */ jsxs(
     "span",
     {

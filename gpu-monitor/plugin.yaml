@@ -14,7 +14,7 @@ config_schema:
   vram_warn_percent:
     type: int
     default: 92
-    description: "VRAM use (%) at which the status-bar chip switches to the accent color (50-100)."
+    description: "VRAM use (%) at or above which the status-bar chip switches to the accent color, for any GPU (50-100)."
   cli_command_enabled:
     type: bool
     default: true
