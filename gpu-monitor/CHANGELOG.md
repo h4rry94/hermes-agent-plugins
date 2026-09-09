@@ -5,7 +5,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this plugin
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
 [RELEASING.md](../RELEASING.md) for the release process.
 
-## [Unreleased]
+## [0.2.0] - 2026-09-09
+
+### Added
+
+- Set the VRAM level at which the status-bar chip warns
+
+### Fixed
+
+- Report an error instead of crashing when nvidia-smi cannot run
+- Keep showing a GPU whose utilization reads as unavailable
+- Stop reporting a GPU whose total VRAM reads as zero
+- Warn at the configured VRAM level instead of just past it
 
 ## [0.1.0] - 2026-08-31
 
