@@ -9,7 +9,7 @@ folder.
 
 | Plugin | What it does | Version |
 | --- | --- | --- |
-| [gpu-monitor](gpu-monitor/README.md) | NVIDIA GPU utilization and VRAM in the desktop status bar, plus an in-session `/gpu` command | [0.2.0](gpu-monitor/CHANGELOG.md) |
+| [gpu-monitor](gpu-monitor/README.md) | NVIDIA GPU utilization, VRAM, temperature and power in the desktop status bar, plus an in-session `/gpu` command | [0.3.0](gpu-monitor/CHANGELOG.md) |
 | [open-config](open-config/README.md) | Status-bar, palette and keybind shortcuts that open `config.yaml` and `.env` in your OS default editor | [0.1.0](open-config/CHANGELOG.md) |
 
 ## Install
