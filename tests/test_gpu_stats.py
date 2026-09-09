@@ -21,6 +21,8 @@ to everyone who installs the chip.
 
 import importlib.util
 import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -143,10 +145,48 @@ class ParseOutputTests(unittest.TestCase):
 class ReadGpusTests(unittest.TestCase):
     """read_gpus normalizes every failure into {"ok": False, "error": str}."""
 
-    def test_missing_nvidia_smi(self):
-        with mock.patch("shutil.which", return_value=None):
+    def test_missing_nvidia_smi_on_a_machine_that_has_a_card(self):
+        # Patched rather than left to the host: this suite runs on CI machines
+        # with no NVIDIA hardware, where the unpatched call would take the
+        # quiet no-GPU path below and this assertion would be meaningless.
+        with mock.patch("shutil.which", return_value=None), mock.patch.object(
+            gpu_stats, "has_nvidia_hardware", return_value=True
+        ):
             sample = gpu_stats.read_gpus()
         self.assertEqual(sample, {"ok": False, "error": "nvidia-smi not found on PATH"})
+
+    def test_missing_nvidia_smi_when_hardware_presence_is_unknown(self):
+        # Unknown is not absence. Assuming absence would silently hide a real
+        # driver problem on any platform the detection does not cover.
+        with mock.patch("shutil.which", return_value=None), mock.patch.object(
+            gpu_stats, "has_nvidia_hardware", return_value=None
+        ):
+            sample = gpu_stats.read_gpus()
+        self.assertEqual(sample, {"ok": False, "error": "nvidia-smi not found on PATH"})
+        self.assertNotIn("reason", sample)
+
+    def test_no_nvidia_hardware_is_quiet_not_an_error(self):
+        with mock.patch("shutil.which", return_value=None), mock.patch.object(
+            gpu_stats, "has_nvidia_hardware", return_value=False
+        ):
+            sample = gpu_stats.read_gpus()
+        self.assertEqual(
+            sample,
+            {
+                "ok": False,
+                "reason": gpu_stats.NO_GPU,
+                "error": "no NVIDIA GPU detected on this machine",
+            },
+        )
+
+    def test_only_the_no_gpu_result_carries_a_reason(self):
+        # The desktop chip keys off `reason` alone, so a driver failure must
+        # never grow one - it would hide the chip on a machine with a real
+        # problem.
+        with mock.patch("shutil.which", return_value="/usr/bin/nvidia-smi"), mock.patch(
+            "subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="nvidia-smi", timeout=5)
+        ):
+            self.assertNotIn("reason", gpu_stats.read_gpus())
 
     def test_timeout(self):
         with mock.patch("shutil.which", return_value="/usr/bin/nvidia-smi"), mock.patch(
@@ -274,6 +314,104 @@ class FormatGpuStatusTests(unittest.TestCase):
         # sample by hand, but the "".join of nothing would otherwise be blank.
         text = gpu_stats.format_gpu_status({"ok": True, "gpus": []})
         self.assertEqual(text, "GPU Monitor: no GPUs reported by nvidia-smi")
+
+    def test_no_gpu_reads_as_a_statement_of_fact(self):
+        text = gpu_stats.format_gpu_status(
+            {
+                "ok": False,
+                "reason": gpu_stats.NO_GPU,
+                "error": "no NVIDIA GPU detected on this machine",
+            }
+        )
+        self.assertEqual(text, "GPU Monitor: no NVIDIA GPU detected on this machine")
+        self.assertEqual(len(text.splitlines()), 1)
+
+
+class HardwareDetectionTests(unittest.TestCase):
+    """has_nvidia_hardware() answers "is a card installed", not "does it work"."""
+
+    def setUp(self):
+        # The answer is cached for the process, so every test starts clean.
+        self.reset_cache()
+        self.addCleanup(self.reset_cache)
+
+    @staticmethod
+    def reset_cache():
+        setattr(gpu_stats, "_hardware_checked", False)
+        setattr(gpu_stats, "_hardware_answer", None)
+
+    def make_sysfs(self, *vendors):
+        """A stand-in for /sys/bus/pci/devices holding one entry per vendor id.
+
+        Real entries are named like `0000:01:00.0`; these are not, because a
+        colon cannot appear in a Windows filename and the suite runs here. The
+        code iterates the directory and never parses the names, so the
+        substitution changes nothing it depends on.
+        """
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        root = Path(holder.name)
+        for index, vendor in enumerate(vendors):
+            device = root / f"device-{index}"
+            device.mkdir()
+            if vendor is not None:
+                (device / "vendor").write_text(vendor, encoding="ascii")
+        return root
+
+    def linux_answer(self, root):
+        with mock.patch.object(gpu_stats, "_PCI_DEVICES", root):
+            return gpu_stats._linux_has_nvidia()
+
+    def test_sysfs_reports_an_nvidia_vendor_id(self):
+        self.assertIs(self.linux_answer(self.make_sysfs("0x8086\n", "0x10de\n")), True)
+
+    def test_sysfs_with_devices_but_no_nvidia_is_a_real_no(self):
+        self.assertIs(self.linux_answer(self.make_sysfs("0x8086\n", "0x1002\n")), False)
+
+    def test_vendor_id_case_does_not_matter(self):
+        self.assertIs(self.linux_answer(self.make_sysfs("0x10DE\n")), True)
+
+    def test_a_device_with_no_readable_vendor_is_skipped(self):
+        self.assertIs(self.linux_answer(self.make_sysfs(None, "0x10de\n")), True)
+
+    def test_an_empty_sysfs_is_unknown_not_absence(self):
+        # No vendor id read at all means sysfs is not populated the way this
+        # check assumes, which is not evidence that the machine has no GPU.
+        self.assertIsNone(self.linux_answer(self.make_sysfs()))
+        self.assertIsNone(self.linux_answer(self.make_sysfs(None)))
+
+    def test_a_missing_sysfs_is_unknown(self):
+        self.assertIsNone(self.linux_answer(Path("no-such-directory-anywhere")))
+
+    def test_macos_is_a_definitive_no(self):
+        with mock.patch.object(sys, "platform", "darwin"):
+            self.assertIs(gpu_stats.has_nvidia_hardware(), False)
+
+    def test_an_unrecognised_platform_is_unknown(self):
+        with mock.patch.object(sys, "platform", "sunos5"):
+            self.assertIsNone(gpu_stats.has_nvidia_hardware())
+
+    def test_the_answer_is_cached(self):
+        with mock.patch.object(sys, "platform", "linux"), mock.patch.object(
+            gpu_stats, "_linux_has_nvidia", return_value=False
+        ) as probe:
+            self.assertIs(gpu_stats.has_nvidia_hardware(), False)
+            self.assertIs(gpu_stats.has_nvidia_hardware(), False)
+        self.assertEqual(probe.call_count, 1)
+
+    def test_an_unknown_answer_is_cached_too(self):
+        with mock.patch.object(sys, "platform", "linux"), mock.patch.object(
+            gpu_stats, "_linux_has_nvidia", return_value=None
+        ) as probe:
+            self.assertIsNone(gpu_stats.has_nvidia_hardware())
+            self.assertIsNone(gpu_stats.has_nvidia_hardware())
+        self.assertEqual(probe.call_count, 1)
+
+    @unittest.skipUnless(sys.platform == "win32", "reads the Windows registry")
+    def test_windows_registry_probe_answers_on_a_real_machine(self):
+        # Not asserting which answer: the point is that the registry walk
+        # completes and commits to a boolean rather than erroring out.
+        self.assertIsInstance(gpu_stats._windows_has_nvidia(), bool)
 
 
 if __name__ == "__main__":

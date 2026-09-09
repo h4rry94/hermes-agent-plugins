@@ -75,12 +75,18 @@ interface Gpu {
   name: string
 }
 
-type GpuStats = ({ ok: true; gpus: Gpu[] } | { ok: false; error: string }) & {
+type GpuStats = ({ ok: true; gpus: Gpu[] } | { ok: false; error: string; reason?: string }) & {
   pollSeconds: number
   // Optional: a hot-reloaded plugin.js can be talking to a backend that
   // predates the setting and awaits a gateway restart.
   vramWarnPercent?: number
 }
+
+// gpu_stats.NO_GPU. The machine has no NVIDIA card, so there is nothing to
+// report and never will be — the one unsuccessful sample that is not a fault.
+// A backend predating it simply never sends the field, and the chip keeps its
+// old error state.
+const NO_GPU = 'no-gpu'
 
 let pluginCtx: PluginContext | null = null
 
@@ -137,6 +143,12 @@ function GpuChip() {
       setPollSeconds(data.pollSeconds)
     }
   }, [data?.pollSeconds, pollSeconds])
+
+  // Nothing to show, ever, on a machine with no NVIDIA card: render nothing
+  // rather than parking a permanent badge in a status bar where width is
+  // scarce. `/gpu` still answers, and the README says so. After the hooks
+  // above, so the early return cannot change the hook order.
+  if (data && !data.ok && data.reason === NO_GPU) return null
 
   const gpus = data?.ok ? data.gpus : null
   // VRAM pressure gets the accent color so a nearly-full card is visible at
