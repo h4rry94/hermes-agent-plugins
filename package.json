@@ -8,10 +8,10 @@
     "check": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "24.10.1",
-    "@types/react": "19.2.18",
-    "esbuild": "0.25.12",
-    "typescript": "5.9.3"
+    "@types/node": "26.5.1",
+    "@types/react": "19.3.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
   },
   "packageManager": "pnpm@11.23.0"
 }
