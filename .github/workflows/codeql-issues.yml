@@ -1,12 +1,18 @@
 name: Code Scanning issues
 
-# Mirrors Code Scanning alerts into GitHub Issues so a finding shows up where
-# work is triaged, not only in the Security tab. GitHub only emits this event
-# for alerts on the default branch, so PR-only findings never become issues;
-# they surface on the PR itself through the CodeQL workflow.
+# Mirrors Code Scanning alerts on main into GitHub Issues so a finding shows up
+# where work is triaged, not only in the Security tab. There is no workflow
+# trigger for alert events (code_scanning_alert is webhook-only), so this runs
+# after every CodeQL scan of main and reconciles: an open alert without an
+# issue gets one, a fixed or dismissed alert gets its issue closed, and a
+# reopened alert gets its issue reopened. PR-only findings never reach main's
+# alert list, so they keep surfacing on the PR itself.
 on:
-  code_scanning_alert:
-    types: [created, reopened, fixed, closed_by_user]
+  workflow_run:
+    workflows: [CodeQL]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,66 +20,85 @@ permissions:
   security-events: read
 
 concurrency:
-  # One alert at a time per number, so a created/fixed pair for the same
-  # alert cannot race and leave two issues or a closed issue reopened.
-  group: codeql-issue-${{ github.event.alert.number }}
+  group: codeql-issues
+  cancel-in-progress: false
 
 jobs:
-  mirror:
-    name: "Alert #${{ github.event.alert.number }} → issue"
+  reconcile:
+    name: Reconcile alerts with issues
+    # A failed scan leaves the alert list stale; reconciling against it would
+    # close issues for alerts that are still there.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      ALERT_NUMBER: ${{ github.event.alert.number }}
-      ALERT_URL: ${{ github.event.alert.html_url }}
-      ALERT_ACTION: ${{ github.event.action }}
-      # Alert text is tool output, not author-controlled, but it still goes
-      # through env rather than being interpolated into the script.
-      RULE_ID: ${{ github.event.alert.rule.id }}
-      RULE_DESC: ${{ github.event.alert.rule.description }}
-      RULE_SEVERITY: ${{ github.event.alert.rule.severity }}
-      SECURITY_SEVERITY: ${{ github.event.alert.rule.security_severity_level }}
-      TOOL_NAME: ${{ github.event.alert.tool.name }}
-      LOCATION_PATH: ${{ github.event.alert.most_recent_instance.location.path }}
-      LOCATION_LINE: ${{ github.event.alert.most_recent_instance.location.start_line }}
-      COMMIT_SHA: ${{ github.event.alert.most_recent_instance.commit_sha }}
+      LABEL: security
+      MARKER_PREFIX: "<!-- code-scanning-alert:"
     steps:
-      - name: Find the issue for this alert
-        id: find
-        run: |
-          # The marker in the body is the join key; titles can be edited.
-          marker="<!-- code-scanning-alert:${ALERT_NUMBER} -->"
-          number="$(gh issue list --state all --limit 200 --search "in:body \"${marker}\"" \
-            --json number,body --jq "map(select(.body | contains(\"${marker}\"))) | .[0].number // empty")"
-          echo "number=${number}" >> "$GITHUB_OUTPUT"
+      - name: Ensure the label exists
+        run: gh label create "$LABEL" --color b60205 --description "Code Scanning finding" --force
 
-      - name: Open an issue
-        if: (github.event.action == 'created' || github.event.action == 'reopened') && steps.find.outputs.number == ''
+      - name: Reconcile
         run: |
-          gh label create security --color b60205 --description "Code Scanning finding" --force
-          title="[${TOOL_NAME}] ${RULE_DESC:-$RULE_ID} in ${LOCATION_PATH}"
-          body="$(cat <<EOF
-          <!-- code-scanning-alert:${ALERT_NUMBER} -->
-          Code Scanning alert [#${ALERT_NUMBER}](${ALERT_URL}) opened by ${TOOL_NAME}.
+          set -euo pipefail
+
+          # Every alert on main, whatever its state, so fixed and dismissed ones
+          # can close their issues.
+          gh api --paginate "repos/${GH_REPO}/code-scanning/alerts?ref=refs/heads/main&per_page=100" \
+            --jq '.[]' | jq -s '.' > alerts.json
+
+          # Every issue this workflow has ever opened, keyed by alert number
+          # from the marker in the body. Titles can be edited; the marker cannot.
+          gh issue list --label "$LABEL" --state all --limit 1000 --json number,state,body \
+            | jq --arg p "$MARKER_PREFIX" '
+                map(select(.body | contains($p))
+                    | {key: (.body | capture($p + "(?<n>[0-9]+)") .n), value: {number, state}})
+                | from_entries' > issues.json
+
+          jq -c '.[]' alerts.json | while read -r alert; do
+            n="$(jq -r '.number' <<<"$alert")"
+            state="$(jq -r '.state' <<<"$alert")"
+            issue="$(jq -r --arg n "$n" '.[$n].number // empty' issues.json)"
+            issue_state="$(jq -r --arg n "$n" '.[$n].state // empty' issues.json)"
+
+            case "$state:$issue_state" in
+              open:)
+                url="$(jq -r '.html_url' <<<"$alert")"
+                tool="$(jq -r '.tool.name' <<<"$alert")"
+                rule_id="$(jq -r '.rule.id' <<<"$alert")"
+                rule_desc="$(jq -r '.rule.description // .rule.id' <<<"$alert")"
+                severity="$(jq -r '.rule.security_severity_level // .rule.severity' <<<"$alert")"
+                path="$(jq -r '.most_recent_instance.location.path' <<<"$alert")"
+                line="$(jq -r '.most_recent_instance.location.start_line' <<<"$alert")"
+                sha="$(jq -r '.most_recent_instance.commit_sha' <<<"$alert")"
+                body="$(cat <<EOF
+          ${MARKER_PREFIX}${n} -->
+          Code Scanning alert [#${n}](${url}) opened by ${tool}.
 
           | | |
           |---|---|
-          | Rule | \`${RULE_ID}\` |
-          | Severity | ${SECURITY_SEVERITY:-${RULE_SEVERITY}} |
-          | Location | \`${LOCATION_PATH}:${LOCATION_LINE}\` |
-          | Commit | ${COMMIT_SHA} |
+          | Rule | \`${rule_id}\` |
+          | Severity | ${severity} |
+          | Location | \`${path}:${line}\` |
+          | Commit | ${sha} |
 
           This issue is closed automatically when the alert is fixed or dismissed.
           EOF
           )"
-          gh issue create --title "${title}" --body "${body}" --label security
-
-      - name: Reopen the issue
-        if: github.event.action == 'reopened' && steps.find.outputs.number != ''
-        run: gh issue reopen "${{ steps.find.outputs.number }}" --comment "Code Scanning alert #${ALERT_NUMBER} was reopened."
-
-      - name: Close the issue
-        if: (github.event.action == 'fixed' || github.event.action == 'closed_by_user') && steps.find.outputs.number != ''
-        run: gh issue close "${{ steps.find.outputs.number }}" --reason completed --comment "Code Scanning alert #${ALERT_NUMBER} was marked ${ALERT_ACTION//_/ }."
+                echo "alert #${n}: opening issue"
+                gh issue create --title "[${tool}] ${rule_desc} in ${path}" --body "$body" --label "$LABEL" </dev/null
+                ;;
+              open:CLOSED)
+                echo "alert #${n}: reopening issue #${issue}"
+                gh issue reopen "$issue" --comment "Code Scanning alert #${n} is open again." </dev/null
+                ;;
+              open:OPEN|*:CLOSED|*:)
+                ;;
+              *:OPEN)
+                echo "alert #${n}: closing issue #${issue} (alert ${state})"
+                gh issue close "$issue" --reason completed --comment "Code Scanning alert #${n} was marked ${state}." </dev/null
+                ;;
+            esac
+          done
