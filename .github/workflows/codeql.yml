@@ -1,0 +1,61 @@
+name: CodeQL
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, so the scan re-runs against new queries rather than only new code.
+    - cron: "26 6 * * 2"
+
+# Read-only by default; the analyse job raises its own scope.
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  # Superseded PR pushes are cancelled; a push to main or a scheduled scan is
+  # not, so main always keeps a complete, uploadable set of results.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      # Uploading the SARIF results to the Security tab.
+      security-events: write
+      # Reading workflow run metadata, needed if this repo is ever made private.
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every language here is interpreted, so all three run with
+        # build-mode: none and the job needs no toolchain of its own - no
+        # setup-python, no pnpm install. 'actions' analyses the workflows in
+        # this directory for injection and untrusted-checkout patterns, which
+        # is the half of this repo's CI that handles PR-author-controlled input.
+        language: [actions, javascript-typescript, python]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          config-file: ./.github/codeql/config.yml
+          # The default suite alone is narrow. security-extended adds the
+          # lower-precision security queries; the quality queries are left out
+          # because style findings do not belong in the Security tab.
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

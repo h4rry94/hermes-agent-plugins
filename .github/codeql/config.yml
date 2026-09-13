@@ -1,0 +1,16 @@
+# Config for the CodeQL Advanced workflow (.github/workflows/codeql.yml).
+# paths-ignore applies to the interpreted languages this repo analyses
+# (javascript-typescript, python), which is all of them - nothing here is
+# compiled, so every language runs with build-mode: none.
+name: "hermes-agent-plugins"
+
+paths-ignore:
+  # Generated esbuild output, committed only because Hermes installs a plugin
+  # folder verbatim and never runs a build (see CLAUDE.md). Analysing a bundle
+  # re-reports its sources' findings against machine-written lines nobody can
+  # fix in place; the .tsx it is built from is analysed instead, and CI's
+  # "Desktop bundles" job is what proves the two match.
+  - "**/desktop/plugin.js"
+  # Vendored dependencies. CodeQL skips these by default for JS, but saying so
+  # keeps the exclusion true if the layout ever changes.
+  - "node_modules"
