@@ -1,0 +1,66 @@
+# Dependabot configuration.
+#
+# Goal: one pull request per ecosystem per run, not one per dependency. Both
+# ecosystems below declare a `security-updates` group and a `version-updates`
+# group, because Dependabot filters groups by `applies-to` and ignores any
+# group that does not match the run it is doing -- an ungrouped security run
+# opens a separate PR per alert.
+#
+# "Per plugin" is the `updates:` entry, not the group: Dependabot scopes an
+# entry to a directory, so a plugin folder that grows its own manifest gets its
+# own entry here and therefore its own PRs. Today neither `gpu-monitor/` nor
+# `open-config/` declares dependencies -- they are Python plus a generated
+# `desktop/plugin.js` -- so every manifest in this repo lives at the root:
+# `package.json`/`pnpm-lock.yaml` (build tooling only) and the workflows under
+# `.github/workflows/`.
+version: 2
+
+updates:
+  # Root pnpm workspace. devDependencies only; nothing here ships to an
+  # installing user, so these are build-tooling updates.
+  #
+  # Note: `esbuild` is pinned exact on purpose -- its output bytes are the
+  # tracked `desktop/plugin.js`. A bump will fail the `Desktop bundles` CI job
+  # until the bundles are rebuilt and committed. That failure is the point;
+  # do not silence it by ignoring esbuild here.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      # Dependabot's default is `chore(deps):`, and `deps` is not a scope this
+      # repo allows -- `scripts/validate.py` gates PR titles against the plugin
+      # folders plus the repo-wide scopes in `cliff.toml`. `chore` keeps the
+      # line out of every generated changelog, which is correct for tooling.
+      prefix: "chore(repo)"
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      npm-development:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # Actions used by `.github/workflows/ci.yml`. Security fixes here are
+  # supply-chain fixes for every PR check in the repo.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(repo)"
+    groups:
+      actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
