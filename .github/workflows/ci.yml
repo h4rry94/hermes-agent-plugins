@@ -2,6 +2,9 @@ name: CI
 
 on:
   pull_request:
+    # `edited` included so retitling a PR re-runs the title check, which
+    # reads the title from the event payload and cannot see a later edit.
+    types: [opened, reopened, synchronize, edited]
   push:
     branches: [main]
 
